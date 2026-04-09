@@ -35,6 +35,7 @@ class MainActivity : FlutterActivity() {
         const val VPN_STATE_CHANNEL = "xyz.dnstt.app/vpn_state"
         const val VPN_REQUEST_CODE = 1001
         const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1002
+        const val SSH_VPN_SOCKS_PORT = 1080
     }
 
     private var methodChannel: MethodChannel? = null
@@ -862,7 +863,7 @@ class MainActivity : FlutterActivity() {
 
                 delay(500)
 
-                // Step 2: Connect SSH client, SOCKS5 on port 7000
+                // Step 2: Connect SSH client, which exposes a local SOCKS5 proxy on port 1080
                 sshTunnelClient = SshTunnelClient()
                 val sshConnected = sshTunnelClient?.connect(
                     username = sshUsername,
@@ -872,11 +873,11 @@ class MainActivity : FlutterActivity() {
 
                 if (sshConnected) {
                     isSshTunnelRunning.set(true)
-                    Log.d("DnsttSsh", "SSH tunnel connected, SOCKS5 proxy on port 7000")
+                    Log.d("DnsttSsh", "SSH tunnel connected, SOCKS5 proxy on port $SSH_VPN_SOCKS_PORT")
 
                     // Step 3: Start VPN service to route traffic through SSH SOCKS5 proxy
                     runOnUiThread {
-                        startVpnServiceForSsh()
+                        startVpnServiceForSsh(dnsServer)
                         result.success(true)
                     }
                 } else {
@@ -909,12 +910,12 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startVpnServiceForSsh() {
+    private fun startVpnServiceForSsh(dnsServer: String) {
         val serviceIntent = Intent(this, DnsttVpnService::class.java).apply {
             action = DnsttVpnService.ACTION_CONNECT
             putExtra(DnsttVpnService.EXTRA_PROXY_HOST, "127.0.0.1")
-            putExtra(DnsttVpnService.EXTRA_PROXY_PORT, 7000)
-            putExtra(DnsttVpnService.EXTRA_DNS_SERVER, "8.8.8.8")
+            putExtra(DnsttVpnService.EXTRA_PROXY_PORT, SSH_VPN_SOCKS_PORT)
+            putExtra(DnsttVpnService.EXTRA_DNS_SERVER, dnsServer)
             putExtra(DnsttVpnService.EXTRA_TUNNEL_DOMAIN, "")
             putExtra(DnsttVpnService.EXTRA_PUBLIC_KEY, "")
             putExtra(DnsttVpnService.EXTRA_SSH_MODE, true)
