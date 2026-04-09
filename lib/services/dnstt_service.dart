@@ -261,7 +261,32 @@ class DnsttService {
     }
 
     // Fallback to DNS query test when no config
-    return _testDnsServerViaDnsQuery(server, tunnelDomain: tunnelDomain, timeout: timeout);
+    return _testDnsServerViaDnsQuery(
+      server,
+      tunnelDomain: tunnelDomain,
+      timeout: timeout,
+    );
+  }
+
+  /// Tests whether the resolver itself answers DNS queries, without using the tunnel.
+  static Future<DnsttTestResult> testResolver(
+    DnsServer server, {
+    Duration timeout = testTimeout,
+  }) async {
+    debugPrint(
+      'DnsTest start resolver=${server.displayName} '
+      'type=${server.resolverType.wireName} value=${server.resolverValue}',
+    );
+
+    switch (server.resolverType) {
+      case DnsResolverType.udp:
+      case DnsResolverType.system:
+        return _testDnsServerViaDnsQuery(server, timeout: timeout);
+      case DnsResolverType.doh:
+        return _testDnsServerViaDoh(server, timeout: timeout);
+      case DnsResolverType.dot:
+        return _testDnsServerViaDot(server, timeout: timeout);
+    }
   }
 
   /// Test DNS server using Slipstream transport
@@ -473,6 +498,11 @@ class DnsttService {
     RawDatagramSocket? socket;
 
     try {
+      debugPrint(
+        'DnsTest udp resolver=${server.displayName} target=${server.connectAddress} '
+        'mode=${tunnelDomain != null && tunnelDomain.isNotEmpty ? 'tunnel' : 'resolver'}',
+      );
+
       // Create UDP socket
       socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
 
@@ -503,11 +533,15 @@ class DnsttService {
 
       timeoutTimer = Timer(timeout, () {
         if (!completer.isCompleted) {
-          completer.complete(DnsttTestResult(
-            server: server,
-            result: TestResult.timeout,
-            message: isDnsttTest ? 'Tunnel query timed out' : 'DNS query timed out',
-          ));
+          completer.complete(
+            DnsttTestResult(
+              server: server,
+              result: TestResult.timeout,
+              message: isDnsttTest
+                  ? 'Tunnel query timed out'
+                  : 'DNS query timed out',
+            ),
+          );
         }
       });
 
@@ -526,11 +560,16 @@ class DnsttService {
             final rcode = datagram.data[3] & 0x0F;
 
             if (!isResponse) {
-              completer.complete(DnsttTestResult(
-                server: server,
-                result: TestResult.failed,
-                message: 'Invalid DNS response',
-              ));
+              debugPrint(
+                'DnsTest udp invalid-response resolver=${server.displayName}',
+              );
+              completer.complete(
+                DnsttTestResult(
+                  server: server,
+                  result: TestResult.failed,
+                  message: 'Invalid DNS response',
+                ),
+              );
               return;
             }
 
@@ -541,61 +580,93 @@ class DnsttService {
                 // Check if there's an answer section
                 final answerCount = (datagram.data[6] << 8) | datagram.data[7];
                 if (answerCount > 0) {
-                  completer.complete(DnsttTestResult(
-                    server: server,
-                    result: TestResult.success,
-                    message: 'Tunnel working',
-                    latency: stopwatch.elapsed,
-                  ));
+                  debugPrint(
+                    'DnsTest udp success resolver=${server.displayName} '
+                    'latency=${stopwatch.elapsedMilliseconds}ms answers=$answerCount',
+                  );
+                  completer.complete(
+                    DnsttTestResult(
+                      server: server,
+                      result: TestResult.success,
+                      message: 'Tunnel working',
+                      latency: stopwatch.elapsed,
+                    ),
+                  );
                 } else {
                   // No answer but no error - might work
-                  completer.complete(DnsttTestResult(
-                    server: server,
-                    result: TestResult.success,
-                    message: 'Tunnel reachable',
-                    latency: stopwatch.elapsed,
-                  ));
+                  debugPrint(
+                    'DnsTest udp reachable resolver=${server.displayName} '
+                    'latency=${stopwatch.elapsedMilliseconds}ms answers=0',
+                  );
+                  completer.complete(
+                    DnsttTestResult(
+                      server: server,
+                      result: TestResult.success,
+                      message: 'Tunnel reachable',
+                      latency: stopwatch.elapsed,
+                    ),
+                  );
                 }
               } else if (rcode == 3) {
-                completer.complete(DnsttTestResult(
-                  server: server,
-                  result: TestResult.failed,
-                  message: 'Domain not found (NXDOMAIN)',
-                ));
+                completer.complete(
+                  DnsttTestResult(
+                    server: server,
+                    result: TestResult.failed,
+                    message: 'Domain not found (NXDOMAIN)',
+                  ),
+                );
               } else if (rcode == 2) {
-                completer.complete(DnsttTestResult(
-                  server: server,
-                  result: TestResult.failed,
-                  message: 'Server failure (SERVFAIL)',
-                ));
+                completer.complete(
+                  DnsttTestResult(
+                    server: server,
+                    result: TestResult.failed,
+                    message: 'Server failure (SERVFAIL)',
+                  ),
+                );
               } else if (rcode == 5) {
-                completer.complete(DnsttTestResult(
-                  server: server,
-                  result: TestResult.failed,
-                  message: 'Query refused',
-                ));
+                completer.complete(
+                  DnsttTestResult(
+                    server: server,
+                    result: TestResult.failed,
+                    message: 'Query refused',
+                  ),
+                );
               } else {
-                completer.complete(DnsttTestResult(
-                  server: server,
-                  result: TestResult.failed,
-                  message: 'DNS error (RCODE: $rcode)',
-                ));
+                completer.complete(
+                  DnsttTestResult(
+                    server: server,
+                    result: TestResult.failed,
+                    message: 'DNS error (RCODE: $rcode)',
+                  ),
+                );
               }
             } else {
               // Simple DNS test - just check for response
               if (rcode == 0) {
-                completer.complete(DnsttTestResult(
-                  server: server,
-                  result: TestResult.success,
-                  message: 'DNS working',
-                  latency: stopwatch.elapsed,
-                ));
+                debugPrint(
+                  'DnsTest udp success resolver=${server.displayName} '
+                  'latency=${stopwatch.elapsedMilliseconds}ms',
+                );
+                completer.complete(
+                  DnsttTestResult(
+                    server: server,
+                    result: TestResult.success,
+                    message: 'DNS working',
+                    latency: stopwatch.elapsed,
+                  ),
+                );
               } else {
-                completer.complete(DnsttTestResult(
-                  server: server,
-                  result: TestResult.failed,
-                  message: 'DNS error (RCODE: $rcode)',
-                ));
+                debugPrint(
+                  'DnsTest udp failed resolver=${server.displayName} '
+                  'rcode=$rcode',
+                );
+                completer.complete(
+                  DnsttTestResult(
+                    server: server,
+                    result: TestResult.failed,
+                    message: 'DNS error (RCODE: $rcode)',
+                  ),
+                );
               }
             }
           }
@@ -605,7 +676,6 @@ class DnsttService {
       final result = await completer.future;
       socket.close();
       return result;
-
     } on SocketException catch (e) {
       stopwatch.stop();
       socket?.close();
@@ -623,6 +693,305 @@ class DnsttService {
         message: 'Error: $e',
       );
     }
+  }
+
+  static Future<DnsttTestResult> _testDnsServerViaDoh(
+    DnsServer server, {
+    Duration timeout = testTimeout,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    final client = HttpClient()..connectionTimeout = timeout;
+
+    try {
+      final uri = Uri.parse(server.address);
+      if (!uri.hasScheme || (uri.scheme != 'https' && uri.scheme != 'http')) {
+        stopwatch.stop();
+        return DnsttTestResult(
+          server: server,
+          result: TestResult.failed,
+          message: 'Invalid DoH URL',
+        );
+      }
+
+      debugPrint('DnsTest doh resolver=${server.displayName} url=$uri');
+
+      final request = await client.postUrl(uri).timeout(timeout);
+      request.headers.set('Accept', 'application/dns-message');
+      request.headers.set('Content-Type', 'application/dns-message');
+      request.add(_buildSimpleDnsQuery());
+
+      final response = await request.close().timeout(timeout);
+      final bodyBuilder = BytesBuilder(copy: false);
+      await for (final chunk in response.timeout(timeout)) {
+        bodyBuilder.add(chunk);
+      }
+      final body = bodyBuilder.toBytes();
+
+      if (response.statusCode != HttpStatus.ok) {
+        stopwatch.stop();
+        debugPrint(
+          'DnsTest doh failed resolver=${server.displayName} '
+          'status=${response.statusCode}',
+        );
+        return DnsttTestResult(
+          server: server,
+          result: TestResult.failed,
+          message: 'DoH HTTP ${response.statusCode}',
+        );
+      }
+
+      final result = _parseResolverResponse(
+        server: server,
+        data: body,
+        stopwatch: stopwatch,
+      );
+      debugPrint(
+        'DnsTest doh ${result.result == TestResult.success ? 'success' : 'failed'} '
+        'resolver=${server.displayName} '
+        'latency=${result.latency?.inMilliseconds ?? '-'}ms '
+        'message=${result.message}',
+      );
+      return result;
+    } on TimeoutException {
+      stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.timeout,
+        message: 'DoH query timed out',
+      );
+    } on SocketException catch (e) {
+      stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Socket error: ${e.message}',
+      );
+    } on HandshakeException catch (e) {
+      stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'TLS handshake failed: $e',
+      );
+    } catch (e) {
+      stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Error: $e',
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static Future<DnsttTestResult> _testDnsServerViaDot(
+    DnsServer server, {
+    Duration timeout = testTimeout,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    SecureSocket? socket;
+
+    try {
+      final endpoint = _parseDotEndpoint(server.address);
+      if (endpoint == null) {
+        stopwatch.stop();
+        return DnsttTestResult(
+          server: server,
+          result: TestResult.failed,
+          message: 'Invalid DoT address',
+        );
+      }
+
+      debugPrint(
+        'DnsTest dot resolver=${server.displayName} '
+        'host=${endpoint.host} port=${endpoint.port}',
+      );
+
+      socket = await SecureSocket.connect(
+        endpoint.host,
+        endpoint.port,
+        timeout: timeout,
+      );
+
+      final query = _buildSimpleDnsQuery();
+      final framedQuery = BytesBuilder(copy: false)
+        ..addByte((query.length >> 8) & 0xFF)
+        ..addByte(query.length & 0xFF)
+        ..add(query);
+
+      socket.add(framedQuery.toBytes());
+      await socket.flush();
+
+      final response = await _readDotResponse(socket, timeout);
+      final result = _parseResolverResponse(
+        server: server,
+        data: response,
+        stopwatch: stopwatch,
+      );
+      debugPrint(
+        'DnsTest dot ${result.result == TestResult.success ? 'success' : 'failed'} '
+        'resolver=${server.displayName} '
+        'latency=${result.latency?.inMilliseconds ?? '-'}ms '
+        'message=${result.message}',
+      );
+      return result;
+    } on TimeoutException {
+      stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.timeout,
+        message: 'DoT query timed out',
+      );
+    } on SocketException catch (e) {
+      stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Socket error: ${e.message}',
+      );
+    } on HandshakeException catch (e) {
+      stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'TLS handshake failed: $e',
+      );
+    } catch (e) {
+      stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Error: $e',
+      );
+    } finally {
+      await socket?.close();
+    }
+  }
+
+  static DnsttTestResult _parseResolverResponse({
+    required DnsServer server,
+    required Uint8List data,
+    required Stopwatch stopwatch,
+  }) {
+    stopwatch.stop();
+
+    if (data.length < 12) {
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Invalid DNS response',
+      );
+    }
+
+    final flags = data[2];
+    final isResponse = (flags & 0x80) != 0;
+    if (!isResponse) {
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Invalid DNS response',
+      );
+    }
+
+    final rcode = data[3] & 0x0F;
+    if (rcode == 0) {
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.success,
+        message: 'DNS working',
+        latency: stopwatch.elapsed,
+      );
+    }
+
+    return DnsttTestResult(
+      server: server,
+      result: TestResult.failed,
+      message: 'DNS error (RCODE: $rcode)',
+    );
+  }
+
+  static ({String host, int port})? _parseDotEndpoint(String address) {
+    final normalized = address.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    if (!normalized.contains(':')) {
+      return (host: normalized, port: 853);
+    }
+
+    final lastColon = normalized.lastIndexOf(':');
+    if (lastColon <= 0 || lastColon == normalized.length - 1) {
+      return null;
+    }
+
+    final host = normalized.substring(0, lastColon);
+    final port = int.tryParse(normalized.substring(lastColon + 1));
+    if (host.isEmpty || port == null) {
+      return null;
+    }
+    return (host: host, port: port);
+  }
+
+  static Future<Uint8List> _readDotResponse(
+    SecureSocket socket,
+    Duration timeout,
+  ) async {
+    final completer = Completer<Uint8List>();
+    final buffer = BytesBuilder(copy: false);
+    StreamSubscription<List<int>>? subscription;
+    Timer? timer;
+    int? expectedLength;
+
+    void completeIfReady() {
+      final bytes = buffer.toBytes();
+      if (expectedLength == null && bytes.length >= 2) {
+        expectedLength = (bytes[0] << 8) | bytes[1];
+      }
+      if (expectedLength != null &&
+          bytes.length >= expectedLength! + 2 &&
+          !completer.isCompleted) {
+        timer?.cancel();
+        subscription?.cancel();
+        completer.complete(
+          Uint8List.fromList(bytes.sublist(2, expectedLength! + 2)),
+        );
+      }
+    }
+
+    timer = Timer(timeout, () {
+      if (!completer.isCompleted) {
+        subscription?.cancel();
+        completer.completeError(TimeoutException('DoT query timed out'));
+      }
+    });
+
+    subscription = socket.listen(
+      (chunk) {
+        buffer.add(chunk);
+        completeIfReady();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!completer.isCompleted) {
+          timer?.cancel();
+          completer.completeError(error, stackTrace);
+        }
+      },
+      onDone: () {
+        if (!completer.isCompleted) {
+          timer?.cancel();
+          completer.completeError(
+            const SocketException('Connection closed before DNS response'),
+          );
+        }
+      },
+      cancelOnError: true,
+    );
+
+    final response = await completer.future;
+    timer.cancel();
+    return response;
   }
 
   /// Tests multiple DNS servers with DNSTT or Slipstream tunnel
@@ -683,26 +1052,62 @@ class DnsttService {
       }
 
       final batch = <Future<DnsttTestResult>>[];
-      final batchSize = queue.length < actualConcurrency ? queue.length : actualConcurrency;
+      final batchSize = queue.length < actualConcurrency
+          ? queue.length
+          : actualConcurrency;
 
       for (int i = 0; i < batchSize; i++) {
         final server = queue.removeAt(0);
-        batch.add(testDnsServer(
-          server,
-          tunnelDomain: tunnelDomain,
-          publicKey: publicKey,
-          testUrl: testUrl,
-          timeout: timeout,
-          transportType: transportType,
-          congestionControl: congestionControl,
-          keepAliveInterval: keepAliveInterval,
-          gso: gso,
-        ));
+        batch.add(
+          testDnsServer(
+            server,
+            tunnelDomain: tunnelDomain,
+            publicKey: publicKey,
+            testUrl: testUrl,
+            timeout: timeout,
+            transportType: transportType,
+            congestionControl: congestionControl,
+            keepAliveInterval: keepAliveInterval,
+            gso: gso,
+          ),
+        );
       }
 
       // Wait for batch to complete
       final batchResults = await Future.wait(batch);
       for (final result in batchResults) {
+        onResult?.call(result);
+      }
+    }
+
+    return true;
+  }
+
+  /// Tests multiple resolvers directly, without starting the tunnel.
+  static Future<bool> testMultipleResolvers(
+    List<DnsServer> servers, {
+    int concurrency = 3,
+    Duration timeout = testTimeout,
+    void Function(DnsttTestResult)? onResult,
+    bool Function()? shouldCancel,
+  }) async {
+    final queue = List<DnsServer>.from(servers);
+
+    while (queue.isNotEmpty) {
+      if (shouldCancel?.call() == true) {
+        return false;
+      }
+
+      final batch = <Future<DnsttTestResult>>[];
+      final batchSize = queue.length < concurrency ? queue.length : concurrency;
+
+      for (int i = 0; i < batchSize; i++) {
+        final server = queue.removeAt(0);
+        batch.add(testResolver(server, timeout: timeout));
+      }
+
+      final results = await Future.wait(batch);
+      for (final result in results) {
         onResult?.call(result);
       }
     }
@@ -726,17 +1131,16 @@ class DnsttService {
       SocksTCPClient.assignToHttpClientWithSecureOptions(client, [
         ProxySettings(InternetAddress(proxyHost), proxyPort),
       ]);
-      final request = await client.getUrl(Uri.parse(testUrl))
-          .timeout(timeout);
+      final request = await client.getUrl(Uri.parse(testUrl)).timeout(timeout);
       request.headers.set('Connection', 'close');
-      final response = await request.close()
-          .timeout(timeout);
+      final response = await request.close().timeout(timeout);
       stopwatch.stop();
       client.close(force: true);
 
       return TunnelTestResult(
         result: response.statusCode >= 200 && response.statusCode < 400
-            ? TestResult.success : TestResult.failed,
+            ? TestResult.success
+            : TestResult.failed,
         message: 'HTTP ${response.statusCode}',
         latency: stopwatch.elapsed,
         statusCode: response.statusCode,
@@ -744,15 +1148,27 @@ class DnsttService {
     } on TimeoutException {
       client.close(force: true);
       stopwatch.stop();
-      return TunnelTestResult(result: TestResult.timeout, message: 'Request timed out', latency: stopwatch.elapsed);
+      return TunnelTestResult(
+        result: TestResult.timeout,
+        message: 'Request timed out',
+        latency: stopwatch.elapsed,
+      );
     } on SocketException catch (e) {
       client.close(force: true);
       stopwatch.stop();
-      return TunnelTestResult(result: TestResult.failed, message: 'Connection failed: ${e.message}', latency: stopwatch.elapsed);
+      return TunnelTestResult(
+        result: TestResult.failed,
+        message: 'Connection failed: ${e.message}',
+        latency: stopwatch.elapsed,
+      );
     } catch (e) {
       client.close(force: true);
       stopwatch.stop();
-      return TunnelTestResult(result: TestResult.failed, message: 'Error: $e', latency: stopwatch.elapsed);
+      return TunnelTestResult(
+        result: TestResult.failed,
+        message: 'Error: $e',
+        latency: stopwatch.elapsed,
+      );
     }
   }
 }

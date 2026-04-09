@@ -4,7 +4,6 @@ import '../models/dns_server.dart';
 import '../models/dnstt_config.dart';
 import '../services/storage_service.dart';
 import '../services/dnstt_service.dart';
-import '../services/vpn_service.dart';
 import '../services/system_dns_service.dart';
 
 enum ConnectionStatus { disconnected, connecting, connected, error }
@@ -30,19 +29,19 @@ class AppState extends ChangeNotifier {
   String _connectionMode = 'vpn';
   DnsServer? _autoDnsServer;
   String? _autoDnsError;
-  DnsServer get localDnsPlaceholder => DnsPresets.all().firstWhere((s) => s.id == DnsServer.localDnsId);
+  DnsServer get localDnsPlaceholder =>
+      DnsPresets.all().firstWhere((s) => s.id == DnsServer.localDnsId);
 
   List<DnsServer> get dnsServers => _dnsServers;
   List<DnsServer> get visibleDnsServers => [
-        _autoDnsServer ??
-            localDnsPlaceholder.copyWith(
-              lastTestMessage: _autoDnsError,
-            ),
-        ..._dnsServers,
-      ];
+    _autoDnsServer ??
+        localDnsPlaceholder.copyWith(lastTestMessage: _autoDnsError),
+    ..._dnsServers,
+  ];
   List<DnsttConfig> get dnsttConfigs => _dnsttConfigs;
   DnsttConfig? get activeConfig => _activeConfig;
-  DnsServer? get activeDns => _activeDnsId == DnsServer.localDnsId ? _autoDnsServer : _activeDns;
+  DnsServer? get activeDns =>
+      _activeDnsId == DnsServer.localDnsId ? _autoDnsServer : _activeDns;
   bool get useAutoDns => _activeDnsId == DnsServer.localDnsId;
   String? get autoDnsError => _autoDnsError;
   ConnectionStatus get connectionStatus => _connectionStatus;
@@ -109,7 +108,8 @@ class AppState extends ChangeNotifier {
           name: server.name ?? existing.name,
           region: server.region ?? existing.region,
           provider: server.provider ?? existing.provider,
-          bootstrapAddress: server.bootstrapAddress ?? existing.bootstrapAddress,
+          bootstrapAddress:
+              server.bootstrapAddress ?? existing.bootstrapAddress,
           isWorking: server.isWorking,
           lastTested: server.lastTested,
           lastLatencyMs: server.lastLatencyMs,
@@ -125,7 +125,9 @@ class AppState extends ChangeNotifier {
 
   // DNS Server Management
   Future<void> addDnsServer(DnsServer server) async {
-    final existingIndex = _dnsServers.indexWhere((s) => s.resolverKey == server.resolverKey);
+    final existingIndex = _dnsServers.indexWhere(
+      (s) => s.resolverKey == server.resolverKey,
+    );
     if (existingIndex == -1) {
       _dnsServers.insert(0, server);
     } else {
@@ -148,14 +150,18 @@ class AppState extends ChangeNotifier {
   /// Import DNS servers with deduplication based on IP address.
   /// If a server with the same IP already exists, only update its name if changed.
   /// Returns the count of new servers added and updated servers.
-  Future<({int added, int updated})> importDnsServers(List<DnsServer> servers) async {
+  Future<({int added, int updated})> importDnsServers(
+    List<DnsServer> servers,
+  ) async {
     int added = 0;
     int updated = 0;
     final newServers = <DnsServer>[];
 
     for (final server in servers) {
       // Find existing server by IP address
-      final existingIndex = _dnsServers.indexWhere((s) => s.resolverKey == server.resolverKey);
+      final existingIndex = _dnsServers.indexWhere(
+        (s) => s.resolverKey == server.resolverKey,
+      );
 
       if (existingIndex >= 0) {
         // Server exists - check if name needs update
@@ -169,7 +175,8 @@ class AppState extends ChangeNotifier {
             region: server.region ?? existing.region,
             provider: server.provider ?? existing.provider,
             resolverType: existing.resolverType,
-            bootstrapAddress: server.bootstrapAddress ?? existing.bootstrapAddress,
+            bootstrapAddress:
+                server.bootstrapAddress ?? existing.bootstrapAddress,
             group: existing.group,
             isPreset: existing.isPreset,
             isWorking: existing.isWorking,
@@ -220,7 +227,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateDnsServerStatus(String id, bool isWorking, {int? latencyMs, String? message}) async {
+  Future<void> updateDnsServerStatus(
+    String id,
+    bool isWorking, {
+    int? latencyMs,
+    String? message,
+  }) async {
     if (id == DnsServer.localDnsId && _autoDnsServer != null) {
       _autoDnsServer = _autoDnsServer!.copyWith(
         isWorking: isWorking,
@@ -254,14 +266,18 @@ class AppState extends ChangeNotifier {
 
   /// Import multiple DNSTT configs with deduplication based on tunnelDomain + publicKey.
   /// Returns the count of new configs added and updated configs.
-  Future<({int added, int updated})> importDnsttConfigs(List<DnsttConfig> configs) async {
+  Future<({int added, int updated})> importDnsttConfigs(
+    List<DnsttConfig> configs,
+  ) async {
     int added = 0;
     int updated = 0;
 
     for (final config in configs) {
       // Find existing config by domain and public key
       final existingIndex = _dnsttConfigs.indexWhere(
-        (c) => c.tunnelDomain == config.tunnelDomain && c.publicKey == config.publicKey,
+        (c) =>
+            c.tunnelDomain == config.tunnelDomain &&
+            c.publicKey == config.publicKey,
       );
 
       if (existingIndex >= 0) {
@@ -348,67 +364,31 @@ class AppState extends ChangeNotifier {
     _testingFailed = 0;
     notifyListeners();
 
-    // Reset native cancellation state before starting
-    final vpnService = VpnService();
-    await vpnService.init();
-    await vpnService.resetTestCancellation();
-
     final servers = List<DnsServer>.from(visibleDnsServers);
-    final tunnelDomain = _activeConfig?.tunnelDomain;
-    final publicKey = _activeConfig?.publicKey;
 
     try {
-      // Check if testing is supported
-      if (!isTestingSupported) {
-        // Mark all as failed with unsupported message
-        for (final server in servers) {
+      await DnsttService.testMultipleResolvers(
+        servers,
+        concurrency: 3,
+        timeout: const Duration(seconds: 8),
+        shouldCancel: () => _cancelTestingRequested,
+        onResult: (result) async {
           _testingProgress++;
-          _testingFailed++;
+
+          if (result.result == TestResult.success) {
+            _testingWorking++;
+          } else {
+            _testingFailed++;
+          }
+
           await updateDnsServerStatus(
-            server.id,
-            false,
-            message: testingUnsupportedMessage,
+            result.server.id,
+            result.result == TestResult.success,
+            latencyMs: result.latency?.inMilliseconds,
+            message: result.message,
           );
-        }
-      } else {
-        // Use the batch testing method (works for both DNSTT and Slipstream)
-        final transportType = _activeConfig?.transportType ?? TransportType.dnstt;
-        await DnsttService.testMultipleDnsServersAll(
-          servers,
-          tunnelDomain: tunnelDomain,
-          publicKey: publicKey,
-          testUrl: _testUrl,
-          concurrency: 3,
-          timeout: const Duration(seconds: 15),
-          shouldCancel: () => _cancelTestingRequested,
-          transportType: transportType,
-          congestionControl: _activeConfig?.congestionControl ?? 'dcubic',
-          keepAliveInterval: _activeConfig?.keepAliveInterval ?? 400,
-          gso: _activeConfig?.gsoEnabled ?? false,
-          onResult: (result) async {
-            if (result.message == 'Cancelled') {
-              _testingProgress++;
-              notifyListeners();
-              return;
-            }
-
-            _testingProgress++;
-
-            if (result.result == TestResult.success) {
-              _testingWorking++;
-            } else {
-              _testingFailed++;
-            }
-
-            await updateDnsServerStatus(
-              result.server.id,
-              result.result == TestResult.success,
-              latencyMs: result.latency?.inMilliseconds,
-              message: result.message,
-            );
-          },
-        );
-      }
+        },
+      );
     } finally {
       _isTestingAll = false;
       _cancelTestingRequested = false;
@@ -457,27 +437,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Check if testing is supported for the current config
-  bool get isTestingSupported {
-    return testingUnsupportedMessage.isEmpty;
-  }
-
-  /// Get message for unsupported testing
-  String get testingUnsupportedMessage {
-    final selectedDns = activeDns;
-    if (selectedDns != null &&
-        _activeConfig?.isSlipstream == true &&
-        (selectedDns.isDohResolver || selectedDns.isDotResolver)) {
-      return 'Slipstream only supports UDP or Local DNS resolvers';
-    }
-    return '';
-  }
-
   String? getResolverSupportMessage(DnsServer server) {
-    if (_activeConfig?.isSlipstream == true &&
-        (server.isDohResolver || server.isDotResolver)) {
-      return 'Slipstream only supports UDP or Local DNS resolvers';
-    }
     if (server.isSystemResolver && _autoDnsServer == null) {
       return _autoDnsError ?? 'Could not detect local DNS';
     }
@@ -490,11 +450,7 @@ class AppState extends ChangeNotifier {
 
     final supportMessage = getResolverSupportMessage(server);
     if (supportMessage != null) {
-      await updateDnsServerStatus(
-        server.id,
-        false,
-        message: supportMessage,
-      );
+      await updateDnsServerStatus(server.id, false, message: supportMessage);
       return;
     }
 
@@ -502,21 +458,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final tunnelDomain = _activeConfig?.tunnelDomain;
-      final publicKey = _activeConfig?.publicKey;
-
-      // Full tunnel test (works for both DNSTT and Slipstream)
-      final transportType = _activeConfig?.transportType ?? TransportType.dnstt;
-      final result = await DnsttService.testDnsServer(
+      final result = await DnsttService.testResolver(
         server,
-        tunnelDomain: tunnelDomain,
-        publicKey: publicKey,
-        testUrl: _testUrl,
-        timeout: const Duration(seconds: 15),
-        transportType: transportType,
-        congestionControl: _activeConfig?.congestionControl ?? 'dcubic',
-        keepAliveInterval: _activeConfig?.keepAliveInterval ?? 400,
-        gso: _activeConfig?.gsoEnabled ?? false,
+        timeout: const Duration(seconds: 8),
       );
 
       await updateDnsServerStatus(
@@ -536,11 +480,6 @@ class AppState extends ChangeNotifier {
     if (_isTestingAll) {
       _cancelTestingRequested = true;
       notifyListeners();
-
-      // Also cancel native tests (Android)
-      final vpnService = VpnService();
-      await vpnService.init();
-      await vpnService.cancelAllTests();
     }
   }
 

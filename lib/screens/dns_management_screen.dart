@@ -128,8 +128,6 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
               builder: (context, state, _) {
                 final hasServers = state.visibleDnsServers.isNotEmpty;
                 final isTestingAll = state.isTestingAll;
-                final isTestingSupported = state.isTestingSupported;
-
                 return Column(
                   children: [
                     Row(
@@ -148,15 +146,13 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                                   ),
                                 )
                               : ElevatedButton.icon(
-                                  onPressed: hasServers && isTestingSupported
+                                  onPressed: hasServers
                                       ? () => _testAllDnsServers(context)
-                                      : hasServers && !isTestingSupported
-                                          ? () => _showTestingNotSupportedError(context, state)
-                                          : null,
+                                      : null,
                                   icon: const Icon(Icons.speed),
                                   label: const Text('Test All'),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: isTestingSupported ? Colors.blue : Colors.grey,
+                                    backgroundColor: Colors.blue,
                                     foregroundColor: Colors.white,
                                   ),
                                 ),
@@ -171,7 +167,9 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                             ? state.testingProgress / state.testingTotal
                             : null,
                         backgroundColor: Colors.grey[300],
-                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Colors.blue,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -184,70 +182,9 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
               },
             ),
           ),
-          // Config info banner
+          // Resolver test info banner
           Consumer<AppState>(
             builder: (context, state, _) {
-              if (state.activeConfig == null) {
-                return Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.warning_amber, color: Colors.orange[700], size: 20),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Select a DNSTT config first to test DNS servers',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              // Show error banner if testing is not supported for this config type
-              if (!state.isTestingSupported) {
-                return Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.error_outline, color: Colors.red[700], size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              state.testingUnsupportedMessage,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red[700],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'DNS testing is only available for DNSTT SOCKS5 configs',
-                              style: TextStyle(fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
               return Container(
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(12),
@@ -259,11 +196,10 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                   children: [
                     Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
                     const SizedBox(width: 8),
-                    Expanded(
+                    const Expanded(
                       child: Text(
-                        'Testing with: ${state.activeConfig!.name}',
-                        style: const TextStyle(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
+                        'DNS tests send direct resolver queries only. They do not verify whether the tunnel can bootstrap through that DNS.',
+                        style: TextStyle(fontSize: 12),
                       ),
                     ),
                   ],
@@ -310,7 +246,10 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
-                        contentPadding: const EdgeInsets.only(left: 0, right: 8),
+                        contentPadding: const EdgeInsets.only(
+                          left: 0,
+                          right: 8,
+                        ),
                         leading: Radio<String>(
                           value: server.id,
                           groupValue: state.activeDns?.id,
@@ -327,8 +266,7 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            if (server.isPreset)
-                              _buildPresetBadge(server),
+                            if (server.isPreset) _buildPresetBadge(server),
                             if (server.isPreset) const SizedBox(width: 8),
                             // Status indicator inline with IP
                             if (server.lastTested != null)
@@ -365,22 +303,27 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                                     )
                                   : IconButton(
                                       padding: EdgeInsets.zero,
-                                      icon: Icon(
-                                        Icons.speed,
-                                        size: 22,
-                                        color: state.isTestingSupported ? null : Colors.grey,
-                                      ),
-                                      onPressed: state.getResolverSupportMessage(server) == null
-                                          ? () => _testSingleDns(context, server)
-                                          : () => ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(state.getResolverSupportMessage(server)!),
-                                                  backgroundColor: Colors.red,
+                                      icon: Icon(Icons.speed, size: 22),
+                                      onPressed:
+                                          state.getResolverSupportMessage(
+                                                server,
+                                              ) ==
+                                              null
+                                          ? () =>
+                                                _testSingleDns(context, server)
+                                          : () => ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      state
+                                                          .getResolverSupportMessage(
+                                                            server,
+                                                          )!,
+                                                    ),
+                                                    backgroundColor: Colors.red,
+                                                  ),
                                                 ),
-                                              ),
-                                      tooltip: state.isTestingSupported
-                                          ? 'Test this DNS'
-                                          : state.testingUnsupportedMessage,
+                                      tooltip: 'Test this DNS',
                                     ),
                             ),
                             // Delete button
@@ -390,8 +333,12 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                                 height: 40,
                                 child: IconButton(
                                   padding: EdgeInsets.zero,
-                                  icon: const Icon(Icons.delete_outline, size: 22),
-                                  onPressed: () => state.removeDnsServer(server.id),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 22,
+                                  ),
+                                  onPressed: () =>
+                                      state.removeDnsServer(server.id),
                                 ),
                               ),
                           ],
@@ -488,7 +435,11 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold),
+        style: const TextStyle(
+          fontSize: 10,
+          color: Colors.blue,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -525,65 +476,24 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     await state.testSingleDnsServer(server);
   }
 
-  void _showTestingNotSupportedError(BuildContext context, AppState state) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.error_outline, color: Colors.red[700]),
-            const SizedBox(width: 8),
-            const Text('Testing Not Available'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              state.testingUnsupportedMessage,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'DNS server testing is only available for DNSTT SOCKS5 configurations.',
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'To test DNS servers, please select a DNSTT config with SOCKS5 tunnel type (not SSH).',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _testAllDnsServers(BuildContext context) async {
     final state = context.read<AppState>();
 
     if (state.visibleDnsServers.isEmpty) return;
 
-    // Show confirmation dialog with test URL option
-    final shouldStart = await _showTestConfirmationDialog(context, state);
+    // Show confirmation dialog
+    final shouldStart = await _showTestConfirmationDialog(context);
     if (shouldStart != true) return;
 
     // Ensure VPN is disconnected before testing
     await _ensureVpnDisconnected();
 
-    final tunnelDomain = state.activeConfig?.tunnelDomain;
-    final testType = tunnelDomain != null ? 'tunnel test' : 'basic DNS test';
-
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Starting $testType for ${state.visibleDnsServers.length} servers...'),
+          content: Text(
+            'Starting DNS resolver test for ${state.visibleDnsServers.length} servers...',
+          ),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -593,9 +503,7 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     await state.startTestingAllDnsServers();
   }
 
-  Future<bool?> _showTestConfirmationDialog(BuildContext context, AppState state) async {
-    final urlController = TextEditingController(text: state.testUrl);
-
+  Future<bool?> _showTestConfirmationDialog(BuildContext context) async {
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -603,64 +511,21 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          children: const [
             Text(
-              'This will test ${state.visibleDnsServers.length} DNS servers by connecting through the tunnel and making an HTTP request.',
-              style: const TextStyle(fontSize: 14),
+              'This will send direct DNS queries to each listed resolver.',
+              style: TextStyle(fontSize: 14),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: urlController,
-              decoration: const InputDecoration(
-                labelText: 'Test URL',
-                hintText: 'https://api.ipify.org?format=json',
-                border: OutlineInputBorder(),
-                helperText: 'URL to fetch through the tunnel',
-              ),
-              keyboardType: TextInputType.url,
-              autocorrect: false,
+            SizedBox(height: 16),
+            Text(
+              'It checks whether the DNS server itself responds. It does not test DNSTT, Slipstream, or SSH tunnel setup.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
             ),
-            const SizedBox(height: 12),
-            if (state.activeConfig != null)
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle, color: Colors.blue, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Using config: ${state.activeConfig!.name}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.warning, color: Colors.orange, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'No config selected. Will use basic DNS test.',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            SizedBox(height: 12),
+            Text(
+              'The app will disconnect an active VPN first so the resolver test runs outside the tunnel.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
           ],
         ),
         actions: [
@@ -670,10 +535,6 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              final newUrl = urlController.text.trim();
-              if (newUrl.isNotEmpty && newUrl != state.testUrl) {
-                state.setTestUrl(newUrl);
-              }
               Navigator.pop(context, true);
             },
             child: const Text('Start Test'),
@@ -695,203 +556,231 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
         minChildSize: 0.3,
         maxChildSize: 0.9,
         expand: false,
-        builder: (sheetContext, scrollController) => FutureBuilder<List<DnsCountryData>>(
-          future: BundledDnsService().loadAllCountries(),
-          builder: (_, snapshot) {
-            final countries = snapshot.data ?? [];
-            final isLoading = snapshot.connectionState == ConnectionState.waiting;
+        builder: (sheetContext, scrollController) =>
+            FutureBuilder<List<DnsCountryData>>(
+              future: BundledDnsService().loadAllCountries(),
+              builder: (_, snapshot) {
+                final countries = snapshot.data ?? [];
+                final isLoading =
+                    snapshot.connectionState == ConnectionState.waiting;
 
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: ListView(
-                controller: scrollController,
-                children: [
-                  Row(
+                return Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: ListView(
+                    controller: scrollController,
                     children: [
-                      const Icon(Icons.download, size: 28),
-                      const SizedBox(width: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.download, size: 28),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Import DNS Servers',
+                            style: Theme.of(sheetContext).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       Text(
-                        'Import DNS Servers',
-                        style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
+                        'Select a country to import DNS servers (${countries.fold<int>(0, (sum, c) => sum + c.servers.length)} total)',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 20),
+                      // Import from URL - First option
+                      Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        color: Colors.purple.withOpacity(0.1),
+                        child: ListTile(
+                          leading: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
                             ),
+                            child: const Icon(Icons.link, color: Colors.purple),
+                          ),
+                          title: const Text(
+                            'Import from URL',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text(
+                            'Fetch DNS servers from a JSON URL',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _showImportFromUrlDialog(context);
+                          },
+                        ),
+                      ),
+                      // Import from File
+                      Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        color: Colors.indigo.withOpacity(0.1),
+                        child: ListTile(
+                          leading: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.indigo.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.file_open,
+                              color: Colors.indigo,
+                            ),
+                          ),
+                          title: const Text(
+                            'Import from File',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text(
+                            'Load DNS servers from a JSON file',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _importFromFile(context);
+                          },
+                        ),
+                      ),
+                      // Import from Clipboard
+                      Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        color: Colors.teal.withOpacity(0.1),
+                        child: ListTile(
+                          leading: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.teal.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.content_paste,
+                              color: Colors.teal,
+                            ),
+                          ),
+                          title: const Text(
+                            'Import from Clipboard',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text('Paste JSON from clipboard'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _importFromClipboard(context);
+                          },
+                        ),
+                      ),
+                      // Import All
+                      Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        color: Colors.green.withOpacity(0.1),
+                        child: ListTile(
+                          leading: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.public,
+                              color: Colors.green,
+                            ),
+                          ),
+                          title: const Text(
+                            'Import All Countries',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            '${countries.fold<int>(0, (sum, c) => sum + c.servers.length)} servers from ${countries.length} countries',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _importAllCountries(context, countries);
+                          },
+                        ),
+                      ),
+                      const Divider(),
+                      Text(
+                        'Select by Country',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (isLoading)
+                        const Center(child: CircularProgressIndicator())
+                      else
+                        ...countries.map(
+                          (country) => Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              leading: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    BundledDnsService.getFlagEmoji(
+                                      country.countryCode,
+                                    ),
+                                    style: const TextStyle(fontSize: 24),
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                country.country,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${country.servers.length} servers',
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () {
+                                Navigator.pop(sheetContext);
+                                _importCountryDns(context, country);
+                              },
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        child: const Text('Cancel'),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Select a country to import DNS servers (${countries.fold<int>(0, (sum, c) => sum + c.servers.length)} total)',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                  const SizedBox(height: 20),
-                  // Import from URL - First option
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    color: Colors.purple.withOpacity(0.1),
-                    child: ListTile(
-                      leading: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.purple.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.link, color: Colors.purple),
-                      ),
-                      title: const Text(
-                        'Import from URL',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: const Text('Fetch DNS servers from a JSON URL'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _showImportFromUrlDialog(context);
-                      },
-                    ),
-                  ),
-                  // Import from File
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    color: Colors.indigo.withOpacity(0.1),
-                    child: ListTile(
-                      leading: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.indigo.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.file_open, color: Colors.indigo),
-                      ),
-                      title: const Text(
-                        'Import from File',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: const Text('Load DNS servers from a JSON file'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _importFromFile(context);
-                      },
-                    ),
-                  ),
-                  // Import from Clipboard
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    color: Colors.teal.withOpacity(0.1),
-                    child: ListTile(
-                      leading: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.teal.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.content_paste, color: Colors.teal),
-                      ),
-                      title: const Text(
-                        'Import from Clipboard',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: const Text('Paste JSON from clipboard'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _importFromClipboard(context);
-                      },
-                    ),
-                  ),
-                  // Import All
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    color: Colors.green.withOpacity(0.1),
-                    child: ListTile(
-                      leading: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.public, color: Colors.green),
-                      ),
-                      title: const Text(
-                        'Import All Countries',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text('${countries.fold<int>(0, (sum, c) => sum + c.servers.length)} servers from ${countries.length} countries'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _importAllCountries(context, countries);
-                      },
-                    ),
-                  ),
-                  const Divider(),
-                  Text(
-                    'Select by Country',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (isLoading)
-                    const Center(child: CircularProgressIndicator())
-                  else
-                    ...countries.map((country) => Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            leading: Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  BundledDnsService.getFlagEmoji(country.countryCode),
-                                  style: const TextStyle(fontSize: 24),
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              country.country,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Text('${country.servers.length} servers'),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () {
-                              Navigator.pop(sheetContext);
-                              _importCountryDns(context, country);
-                            },
-                          ),
-                        )),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    child: const Text('Cancel'),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
+                );
+              },
+            ),
       ),
     );
   }
 
-  Future<void> _importCountryDns(BuildContext context, DnsCountryData country) async {
+  Future<void> _importCountryDns(
+    BuildContext context,
+    DnsCountryData country,
+  ) async {
     final state = context.read<AppState>();
     final result = await state.importDnsServers(country.servers);
 
     if (context.mounted) {
       String message;
       if (result.added > 0 && result.updated > 0) {
-        message = 'Added ${result.added} new servers, updated ${result.updated} existing';
+        message =
+            'Added ${result.added} new servers, updated ${result.updated} existing';
       } else if (result.added > 0) {
         message = 'Added ${result.added} DNS servers from ${country.country}';
       } else if (result.updated > 0) {
@@ -900,13 +789,16 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
         message = 'All servers from ${country.country} already imported';
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
-  Future<void> _importAllCountries(BuildContext context, List<DnsCountryData> countries) async {
+  Future<void> _importAllCountries(
+    BuildContext context,
+    List<DnsCountryData> countries,
+  ) async {
     final state = context.read<AppState>();
     int totalAdded = 0;
     int totalUpdated = 0;
@@ -920,9 +812,11 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     if (context.mounted) {
       String message;
       if (totalAdded > 0 && totalUpdated > 0) {
-        message = 'Added $totalAdded new servers, updated $totalUpdated existing';
+        message =
+            'Added $totalAdded new servers, updated $totalUpdated existing';
       } else if (totalAdded > 0) {
-        message = 'Added $totalAdded DNS servers from ${countries.length} countries';
+        message =
+            'Added $totalAdded DNS servers from ${countries.length} countries';
       } else if (totalUpdated > 0) {
         message = 'Updated $totalUpdated existing servers';
       } else {
@@ -1003,15 +897,14 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
               }
 
               final state = context.read<AppState>();
-              state.addDnsServer(DnsServer(
-                address: ip,
-                name: name.isNotEmpty ? name : null,
-              ));
+              state.addDnsServer(
+                DnsServer(address: ip, name: name.isNotEmpty ? name : null),
+              );
 
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('DNS server added')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('DNS server added')));
             },
             child: const Text('Add'),
           ),
@@ -1187,7 +1080,9 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
 
               if (!url.startsWith('http://') && !url.startsWith('https://')) {
                 ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  const SnackBar(content: Text('URL must start with http:// or https://')),
+                  const SnackBar(
+                    content: Text('URL must start with http:// or https://'),
+                  ),
                 );
                 return;
               }
@@ -1225,7 +1120,9 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     );
 
     try {
-      final servers = await ConfigImportExportService.importDnsServersFromUrl(url);
+      final servers = await ConfigImportExportService.importDnsServersFromUrl(
+        url,
+      );
 
       if (context.mounted) {
         Navigator.pop(context); // Close loading dialog
@@ -1246,7 +1143,8 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
         if (context.mounted) {
           String message;
           if (result.added > 0 && result.updated > 0) {
-            message = 'Added ${result.added} new servers, updated ${result.updated} existing';
+            message =
+                'Added ${result.added} new servers, updated ${result.updated} existing';
           } else if (result.added > 0) {
             message = 'Added ${result.added} new DNS servers';
           } else if (result.updated > 0) {
@@ -1281,13 +1179,15 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     final state = context.read<AppState>();
 
     if (state.dnsServers.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No DNS servers to export')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No DNS servers to export')));
       return;
     }
 
-    final jsonString = ConfigImportExportService.exportDnsServersToJson(state.dnsServers);
+    final jsonString = ConfigImportExportService.exportDnsServersToJson(
+      state.dnsServers,
+    );
 
     // On desktop, directly open native save dialog
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
@@ -1309,7 +1209,10 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
             children: [
               Text(
                 'Export ${state.dnsServers.length} DNS Servers',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 16),
               ListTile(
@@ -1318,7 +1221,12 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                 subtitle: const Text('Send via apps, AirDrop, etc.'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _shareJsonFile(context, jsonString, 'dns_servers.json', 'DNS Servers');
+                  _shareJsonFile(
+                    context,
+                    jsonString,
+                    'dns_servers.json',
+                    'DNS Servers',
+                  );
                 },
               ),
               ListTile(
@@ -1337,7 +1245,12 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     );
   }
 
-  Future<void> _shareJsonFile(BuildContext context, String jsonString, String fileName, String subject) async {
+  Future<void> _shareJsonFile(
+    BuildContext context,
+    String jsonString,
+    String fileName,
+    String subject,
+  ) async {
     try {
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/$fileName');
@@ -1354,15 +1267,23 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to share: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed to share: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
 
-  Future<void> _saveJsonFile(BuildContext context, String jsonString, String fileName) async {
+  Future<void> _saveJsonFile(
+    BuildContext context,
+    String jsonString,
+    String fileName,
+  ) async {
     try {
-      final isDesktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+      final isDesktop =
+          Platform.isMacOS || Platform.isWindows || Platform.isLinux;
       final bytes = utf8.encode(jsonString);
 
       final result = await FilePicker.platform.saveFile(
@@ -1379,14 +1300,20 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
         }
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Saved to file'), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text('Saved to file'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed to save: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1399,9 +1326,9 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
 
       if (text == null || text.isEmpty) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Clipboard is empty')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Clipboard is empty')));
         }
         return;
       }
@@ -1426,7 +1353,8 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
       if (context.mounted) {
         String message;
         if (importResult.added > 0 && importResult.updated > 0) {
-          message = 'Added ${importResult.added} new servers, updated ${importResult.updated} existing';
+          message =
+              'Added ${importResult.added} new servers, updated ${importResult.updated} existing';
         } else if (importResult.added > 0) {
           message = 'Added ${importResult.added} new DNS servers';
         } else if (importResult.updated > 0) {
@@ -1475,7 +1403,9 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
         throw Exception('Could not read file');
       }
 
-      final servers = ConfigImportExportService.importDnsServersFromJson(jsonString);
+      final servers = ConfigImportExportService.importDnsServersFromJson(
+        jsonString,
+      );
 
       if (servers.isEmpty) {
         if (context.mounted) {
@@ -1495,7 +1425,8 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
       if (context.mounted) {
         String message;
         if (importResult.added > 0 && importResult.updated > 0) {
-          message = 'Added ${importResult.added} new servers, updated ${importResult.updated} existing';
+          message =
+              'Added ${importResult.added} new servers, updated ${importResult.updated} existing';
         } else if (importResult.added > 0) {
           message = 'Added ${importResult.added} new DNS servers';
         } else if (importResult.updated > 0) {
