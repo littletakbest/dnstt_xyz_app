@@ -1,5 +1,12 @@
 # DNSTT Client - Build & Development Guide
 
+## Repository Status
+
+This repository is now intentionally scoped to Android only.
+Packaging is locked to `arm64-v8a`, and the desktop platform folders have been removed.
+
+If you see older references below to macOS, Windows, Linux, or multi-ABI Android outputs, treat them as legacy notes rather than current build targets.
+
 **Website**: https://dnstt.xyz
 **GitHub**: https://github.com/dnstt-xyz/dnstt_xyz_app
 

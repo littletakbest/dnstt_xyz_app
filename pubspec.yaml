@@ -1,5 +1,5 @@
 name: dnstt_xyz_app
-description: "DNSTT Client - DNS Tunnel Mobile App"
+description: "Android ARM64 DNS tunnel client"
 publish_to: 'none'
 
 version: 2.2.0+5
