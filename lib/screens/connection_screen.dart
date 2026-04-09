@@ -54,7 +54,12 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         appState.setConnectionStatus(ConnectionStatus.connecting);
         break;
       case VpnState.error:
-        appState.setConnectionStatus(ConnectionStatus.error, _errorMessage);
+        appState.setConnectionStatus(
+          ConnectionStatus.error,
+          appState.describeConnectionFailure(
+            _errorMessage ?? _vpnService.lastError,
+          ),
+        );
         break;
     }
   }
@@ -68,9 +73,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('VPN Connection'),
-      ),
+      appBar: AppBar(title: const Text('VPN Connection')),
       body: Consumer<AppState>(
         builder: (context, state, _) {
           return SingleChildScrollView(
@@ -129,7 +132,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 shape: BoxShape.circle,
                 border: Border.all(color: statusColor, width: 3),
               ),
-              child: _vpnState == VpnState.connecting ||
+              child:
+                  _vpnState == VpnState.connecting ||
                       _vpnState == VpnState.disconnecting
                   ? Padding(
                       padding: const EdgeInsets.all(30),
@@ -144,9 +148,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             Text(
               statusText,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
-                  ),
+                fontWeight: FontWeight.bold,
+                color: statusColor,
+              ),
             ),
             if (_errorMessage != null && _vpnState == VpnState.error) ...[
               const SizedBox(height: 8),
@@ -159,7 +163,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             if (_vpnState == VpnState.connected) ...[
               const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -243,10 +250,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             child: Text(label, style: const TextStyle(color: Colors.grey)),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontFamily: 'monospace'),
-            ),
+            child: Text(value, style: const TextStyle(fontFamily: 'monospace')),
           ),
         ],
       ),
@@ -298,8 +302,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
           ElevatedButton.icon(
             onPressed: _disconnect,
             icon: const Icon(Icons.stop, size: 28),
-            label:
-                const Text('Disconnect VPN', style: TextStyle(fontSize: 18)),
+            label: const Text('Disconnect VPN', style: TextStyle(fontSize: 18)),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
@@ -326,8 +329,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   _vpnState == VpnState.connected
                       ? Icons.check_circle
                       : Icons.info_outline,
-                  color:
-                      _vpnState == VpnState.connected ? Colors.green : Colors.blue,
+                  color: _vpnState == VpnState.connected
+                      ? Colors.green
+                      : Colors.blue,
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -381,7 +385,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
     if (!success && mounted) {
       setState(() {
-        _errorMessage = 'VPN requires paid Apple Developer account.\nNetwork Extension entitlement is not available with free accounts.';
+        _errorMessage =
+            'VPN requires paid Apple Developer account.\nNetwork Extension entitlement is not available with free accounts.';
       });
     }
   }

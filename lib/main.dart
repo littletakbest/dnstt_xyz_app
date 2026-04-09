@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'providers/app_state.dart';
 import 'services/storage_service.dart';
 import 'screens/home_screen.dart';
-import 'models/dns_server.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,16 +10,6 @@ void main() async {
   final storage = await StorageService.init();
   final appState = AppState();
   await appState.init(storage);
-
-  // Add default DNS server if none exists
-  if (appState.dnsServers.isEmpty) {
-    final defaultDns = DnsServer(
-      name: 'Google DNS',
-      address: '8.8.8.8',
-    );
-    await appState.addDnsServer(defaultDns);
-    await appState.setActiveDns(defaultDns);
-  }
 
   runApp(
     ChangeNotifierProvider.value(
@@ -51,9 +40,7 @@ class DnsttClientApp extends StatelessWidget {
           elevation: 2,
         ),
         inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 12,
@@ -87,9 +74,7 @@ class DnsttClientApp extends StatelessWidget {
           elevation: 2,
         ),
         inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 12,

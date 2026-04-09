@@ -444,6 +444,35 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  String describeConnectionFailure(String? rawError) {
+    if (rawError == null || rawError.trim().isEmpty) {
+      return 'VPN connection failed';
+    }
+
+    final resolver = activeDns;
+    final lower = rawError.toLowerCase();
+
+    if (lower.contains('dns server not responding')) {
+      final resolverName = resolver?.displayName ?? 'the selected DNS server';
+      final baseMessage =
+          'DNSTT could not bootstrap through $resolverName. '
+          'The resolver may answer normal DNS queries, but DNSTT tunnel TXT/EDNS queries timed out.';
+
+      if (resolver != null &&
+          (resolver.isUdpResolver || resolver.isSystemResolver)) {
+        return '$baseMessage Try a DoH/DoT preset or another DNS provider.';
+      }
+      return baseMessage;
+    }
+
+    if (lower.contains('tunnel verification failed')) {
+      return 'The tunnel started but traffic verification failed. '
+          'Check the tunnel domain/public key and try another DNS preset if needed.';
+    }
+
+    return rawError;
+  }
+
   /// Test a single DNS server
   Future<void> testSingleDnsServer(DnsServer server) async {
     if (_testingDns[server.id] == true) return; // Already testing this server

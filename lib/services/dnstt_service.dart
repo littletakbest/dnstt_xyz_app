@@ -715,10 +715,13 @@ class DnsttService {
 
       debugPrint('DnsTest doh resolver=${server.displayName} url=$uri');
 
+      final query = _buildSimpleDnsQuery();
       final request = await client.postUrl(uri).timeout(timeout);
       request.headers.set('Accept', 'application/dns-message');
       request.headers.set('Content-Type', 'application/dns-message');
-      request.add(_buildSimpleDnsQuery());
+      request.headers.set('User-Agent', '');
+      request.contentLength = query.length;
+      request.add(query);
 
       final response = await request.close().timeout(timeout);
       final bodyBuilder = BytesBuilder(copy: false);
@@ -728,15 +731,14 @@ class DnsttService {
       final body = bodyBuilder.toBytes();
 
       if (response.statusCode != HttpStatus.ok) {
-        stopwatch.stop();
         debugPrint(
           'DnsTest doh failed resolver=${server.displayName} '
-          'status=${response.statusCode}',
+          'status=${response.statusCode} retry=get',
         );
-        return DnsttTestResult(
-          server: server,
-          result: TestResult.failed,
-          message: 'DoH HTTP ${response.statusCode}',
+        return _testDnsServerViaDohGet(
+          server,
+          timeout: timeout,
+          stopwatch: stopwatch,
         );
       }
 
@@ -775,6 +777,93 @@ class DnsttService {
       );
     } catch (e) {
       stopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Error: $e',
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static Future<DnsttTestResult> _testDnsServerViaDohGet(
+    DnsServer server, {
+    required Duration timeout,
+    Stopwatch? stopwatch,
+  }) async {
+    final activeStopwatch = stopwatch ?? (Stopwatch()..start());
+    final client = HttpClient()..connectionTimeout = timeout;
+
+    try {
+      final baseUri = Uri.parse(server.address);
+      final query = _buildSimpleDnsQuery();
+      final encodedQuery = base64UrlEncode(query).replaceAll('=', '');
+      final uri = baseUri.replace(
+        queryParameters: {...baseUri.queryParameters, 'dns': encodedQuery},
+      );
+
+      debugPrint('DnsTest doh-get resolver=${server.displayName} url=$uri');
+
+      final request = await client.getUrl(uri).timeout(timeout);
+      request.headers.set('Accept', 'application/dns-message');
+      request.headers.set('User-Agent', '');
+
+      final response = await request.close().timeout(timeout);
+      final bodyBuilder = BytesBuilder(copy: false);
+      await for (final chunk in response.timeout(timeout)) {
+        bodyBuilder.add(chunk);
+      }
+      final body = bodyBuilder.toBytes();
+
+      if (response.statusCode != HttpStatus.ok) {
+        activeStopwatch.stop();
+        debugPrint(
+          'DnsTest doh-get failed resolver=${server.displayName} '
+          'status=${response.statusCode}',
+        );
+        return DnsttTestResult(
+          server: server,
+          result: TestResult.failed,
+          message: 'DoH HTTP ${response.statusCode}',
+        );
+      }
+
+      final result = _parseResolverResponse(
+        server: server,
+        data: body,
+        stopwatch: activeStopwatch,
+      );
+      debugPrint(
+        'DnsTest doh-get ${result.result == TestResult.success ? 'success' : 'failed'} '
+        'resolver=${server.displayName} '
+        'latency=${result.latency?.inMilliseconds ?? '-'}ms '
+        'message=${result.message}',
+      );
+      return result;
+    } on TimeoutException {
+      activeStopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.timeout,
+        message: 'DoH query timed out',
+      );
+    } on SocketException catch (e) {
+      activeStopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Socket error: ${e.message}',
+      );
+    } on HandshakeException catch (e) {
+      activeStopwatch.stop();
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'TLS handshake failed: $e',
+      );
+    } catch (e) {
+      activeStopwatch.stop();
       return DnsttTestResult(
         server: server,
         result: TestResult.failed,
