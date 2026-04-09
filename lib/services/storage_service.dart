@@ -12,6 +12,7 @@ class StorageService {
   static const String _proxyPortKey = 'proxy_port';
   static const String _connectionModeKey = 'connection_mode';
   static const String _useAutoDnsKey = 'use_auto_dns';
+  static const String _strictDnsModeKey = 'strict_dns_mode';
   static const int defaultProxyPort = 1080;
 
   final SharedPreferences _prefs;
@@ -143,6 +144,14 @@ class StorageService {
 
   Future<void> setConnectionMode(String mode) async {
     await _prefs.setString(_connectionModeKey, mode);
+  }
+
+  // Strict DNS Mode (Android VPN)
+  Future<bool> getStrictDnsMode() async =>
+      _prefs.getBool(_strictDnsModeKey) ?? true;
+
+  Future<void> setStrictDnsMode(bool value) async {
+    await _prefs.setBool(_strictDnsModeKey, value);
   }
 
   // Auto DNS

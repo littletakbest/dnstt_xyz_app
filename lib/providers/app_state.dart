@@ -27,6 +27,7 @@ class AppState extends ChangeNotifier {
   String _testUrl = 'https://www.google.com';
   int _proxyPort = StorageService.defaultProxyPort;
   String _connectionMode = 'vpn';
+  bool _strictDnsMode = true;
   DnsServer? _autoDnsServer;
   String? _autoDnsError;
   DnsServer get localDnsPlaceholder =>
@@ -51,6 +52,21 @@ class AppState extends ChangeNotifier {
   String get testUrl => _testUrl;
   int get proxyPort => _proxyPort;
   String get connectionMode => _connectionMode;
+  bool get strictDnsMode => _strictDnsMode;
+  bool get isAndroidVpnMode =>
+      defaultTargetPlatform == TargetPlatform.android &&
+      _connectionMode == 'vpn';
+  bool get isStrictDnsActive => isAndroidVpnMode && _strictDnsMode;
+  DnsServer? get effectiveAppDns {
+    final resolver = activeDns;
+    if (resolver == null) return null;
+    if (!isStrictDnsActive) return resolver;
+    if (resolver.isSystemResolver) {
+      return DnsPresets.googleFallback();
+    }
+    return resolver;
+  }
+
   int get testingProgress => _testingProgress;
   int get testingTotal => _testingTotal;
   int get testingWorking => _testingWorking;
@@ -84,6 +100,7 @@ class AppState extends ChangeNotifier {
     _testUrl = await _storage!.getTestUrl() ?? 'https://www.google.com';
     _proxyPort = await _storage!.getProxyPort();
     _connectionMode = await _storage!.getConnectionMode() ?? 'vpn';
+    _strictDnsMode = await _storage!.getStrictDnsMode();
 
     await _detectSystemDns();
 
@@ -473,6 +490,26 @@ class AppState extends ChangeNotifier {
     return rawError;
   }
 
+  String get bootstrapDnsLabel {
+    final resolver = activeDns;
+    if (resolver == null) return 'No DNS selected';
+    if (resolver.isSystemResolver) {
+      return '${resolver.displayAddress} (Local)';
+    }
+    return resolver.displayName;
+  }
+
+  String get appDnsLabel {
+    final resolver = effectiveAppDns;
+    if (resolver == null) return 'No DNS selected';
+    if (isStrictDnsActive &&
+        activeDns?.isSystemResolver == true &&
+        resolver.id == DnsPresets.googleFallback().id) {
+      return '${resolver.displayName} (fallback)';
+    }
+    return resolver.displayName;
+  }
+
   /// Test a single DNS server
   Future<void> testSingleDnsServer(DnsServer server) async {
     if (_testingDns[server.id] == true) return; // Already testing this server
@@ -574,6 +611,12 @@ class AppState extends ChangeNotifier {
   Future<void> setConnectionMode(String mode) async {
     _connectionMode = mode;
     await _storage!.setConnectionMode(mode);
+    notifyListeners();
+  }
+
+  Future<void> setStrictDnsMode(bool value) async {
+    _strictDnsMode = value;
+    await _storage!.setStrictDnsMode(value);
     notifyListeners();
   }
 }

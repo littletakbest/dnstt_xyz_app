@@ -17,6 +17,10 @@ class DnsPresets {
   static List<DnsServer> persistentPresets() {
     return all().where((server) => !server.isSystemResolver).toList();
   }
+
+  static DnsServer googleFallback() {
+    return const _PresetFactory().googleUdp();
+  }
 }
 
 class _PresetFactory {

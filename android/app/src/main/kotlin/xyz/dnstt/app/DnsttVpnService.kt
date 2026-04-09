@@ -12,9 +12,17 @@ import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.EOFException
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.Socket
 import java.nio.ByteBuffer
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -23,6 +31,8 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 import mobile.Mobile
 
 class DnsttVpnService : VpnService() {
@@ -41,6 +51,11 @@ class DnsttVpnService : VpnService() {
         const val EXTRA_RESOLVER_TYPE = "resolver_type"
         const val EXTRA_RESOLVER_VALUE = "resolver_value"
         const val EXTRA_RESOLVER_DISPLAY_NAME = "resolver_display_name"
+        const val EXTRA_APP_DNS_SERVER = "app_dns_server"
+        const val EXTRA_APP_RESOLVER_TYPE = "app_resolver_type"
+        const val EXTRA_APP_RESOLVER_VALUE = "app_resolver_value"
+        const val EXTRA_APP_RESOLVER_DISPLAY_NAME = "app_resolver_display_name"
+        const val EXTRA_STRICT_DNS_MODE = "strict_dns_mode"
         const val EXTRA_TUNNEL_DOMAIN = "tunnel_domain"
         const val EXTRA_PUBLIC_KEY = "public_key"
         const val EXTRA_SSH_MODE = "ssh_mode"
@@ -50,6 +65,8 @@ class DnsttVpnService : VpnService() {
         const val EXTRA_CONGESTION_CONTROL = "congestion_control"
         const val EXTRA_KEEP_ALIVE_INTERVAL = "keep_alive_interval"
         const val EXTRA_GSO = "gso"
+        const val VPN_TUN_ADDRESS = "10.0.0.2"
+        const val VPN_DNS_ADDRESS = "10.0.0.1"
 
         var isRunning = AtomicBoolean(false)
         var stateCallback: ((String) -> Unit)? = null
@@ -62,6 +79,11 @@ class DnsttVpnService : VpnService() {
     private var resolverType: String = "udp"
     private var resolverValue: String = "8.8.8.8"
     private var resolverDisplayName: String = "8.8.8.8"
+    private var appDnsServer: String = "8.8.8.8"
+    private var appResolverType: String = "udp"
+    private var appResolverValue: String = "8.8.8.8"
+    private var appResolverDisplayName: String = "8.8.8.8"
+    private var strictDnsMode: Boolean = true
     private var tunnelDomain: String = ""
     private var publicKey: String = ""
     private var isSshMode: Boolean = false
@@ -105,6 +127,11 @@ class DnsttVpnService : VpnService() {
                 resolverType = intent.getStringExtra(EXTRA_RESOLVER_TYPE) ?: "udp"
                 resolverValue = intent.getStringExtra(EXTRA_RESOLVER_VALUE) ?: dnsServer
                 resolverDisplayName = intent.getStringExtra(EXTRA_RESOLVER_DISPLAY_NAME) ?: dnsServer
+                appDnsServer = intent.getStringExtra(EXTRA_APP_DNS_SERVER) ?: dnsServer
+                appResolverType = intent.getStringExtra(EXTRA_APP_RESOLVER_TYPE) ?: resolverType
+                appResolverValue = intent.getStringExtra(EXTRA_APP_RESOLVER_VALUE) ?: resolverValue
+                appResolverDisplayName = intent.getStringExtra(EXTRA_APP_RESOLVER_DISPLAY_NAME) ?: resolverDisplayName
+                strictDnsMode = intent.getBooleanExtra(EXTRA_STRICT_DNS_MODE, true)
                 tunnelDomain = intent.getStringExtra(EXTRA_TUNNEL_DOMAIN) ?: ""
                 publicKey = intent.getStringExtra(EXTRA_PUBLIC_KEY) ?: ""
                 isSshMode = intent.getBooleanExtra(EXTRA_SSH_MODE, false)
@@ -114,6 +141,7 @@ class DnsttVpnService : VpnService() {
                 congestionControl = intent.getStringExtra(EXTRA_CONGESTION_CONTROL) ?: "dcubic"
                 keepAliveInterval = intent.getIntExtra(EXTRA_KEEP_ALIVE_INTERVAL, 400)
                 gso = intent.getBooleanExtra(EXTRA_GSO, false)
+                Log.d(TAG, "Bootstrap DNS: $resolverDisplayName ($resolverType), App DNS: $appResolverDisplayName ($appResolverType), Strict DNS: $strictDnsMode")
                 // Run connect on background thread to avoid ANR
                 Thread { connect() }.start()
                 START_STICKY
@@ -425,9 +453,9 @@ class DnsttVpnService : VpnService() {
             // This ensures dnstt client's sockets bypass the VPN
             val builder = Builder()
                 .setSession("DNSTT Tunnel")
-                .addAddress("10.0.0.2", 32)
+                .addAddress(VPN_TUN_ADDRESS, 32)
                 .addRoute("0.0.0.0", 0)
-                .addDnsServer(dnsServer)
+                .addDnsServer(if (strictDnsMode) VPN_DNS_ADDRESS else dnsServer)
                 .setMtu(1500)
                 .setBlocking(true)
 
@@ -696,32 +724,16 @@ class DnsttVpnService : VpnService() {
 
         Log.d(TAG, "DNS query from ${ipHeader.sourceIp}:${udpHeader.sourcePort} to ${ipHeader.destinationIp}:53")
 
-        // Forward DNS query to the actual DNS server
+        // Forward DNS query according to the selected VPN DNS mode
         Thread {
             try {
-                // Create a protected UDP socket to bypass VPN
-                val dnsSocket = DatagramSocket()
-                protect(dnsSocket)
+                val responseData = if (strictDnsMode) {
+                    resolveDnsQueryThroughTunnel(udpHeader.payload)
+                } else {
+                    resolveDnsQueryDirect(udpHeader.payload)
+                } ?: return@Thread
 
-                // Send DNS query to DNS server
-                val dnsServerAddr = InetAddress.getByName(dnsServer)
-                val queryPacket = DatagramPacket(
-                    udpHeader.payload,
-                    udpHeader.payload.size,
-                    dnsServerAddr,
-                    53
-                )
-                dnsSocket.soTimeout = 5000 // 5 second timeout
-                dnsSocket.send(queryPacket)
-
-                // Receive DNS response
-                val responseBuffer = ByteArray(4096)
-                val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
-                dnsSocket.receive(responsePacket)
-                dnsSocket.close()
-
-                val responseData = responseBuffer.copyOf(responsePacket.length)
-                Log.d(TAG, "DNS response received: ${responsePacket.length} bytes")
+                Log.d(TAG, "DNS response received: ${responseData.size} bytes")
 
                 // Build response packet
                 val responseUdp = UDPHeader(
@@ -758,6 +770,148 @@ class DnsttVpnService : VpnService() {
                 Log.e(TAG, "DNS forwarding failed", e)
             }
         }.start()
+    }
+
+    private fun resolveDnsQueryDirect(query: ByteArray): ByteArray? {
+        val dnsSocket = DatagramSocket()
+        return try {
+            protect(dnsSocket)
+
+            val dnsServerAddr = InetAddress.getByName(dnsServer)
+            val queryPacket = DatagramPacket(query, query.size, dnsServerAddr, 53)
+            dnsSocket.soTimeout = 5000
+            dnsSocket.send(queryPacket)
+
+            val responseBuffer = ByteArray(4096)
+            val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
+            dnsSocket.receive(responsePacket)
+            responseBuffer.copyOf(responsePacket.length)
+        } finally {
+            dnsSocket.close()
+        }
+    }
+
+    private fun resolveDnsQueryThroughTunnel(query: ByteArray): ByteArray? {
+        return when (appResolverType.lowercase()) {
+            "doh" -> queryDnsOverHttps(query)
+            "dot" -> queryDnsOverTls(query)
+            else -> queryDnsOverTcp(query)
+        }
+    }
+
+    private fun queryDnsOverTcp(query: ByteArray): ByteArray? {
+        val endpoint = parseResolverEndpoint(appDnsServer, 53)
+        val socket = openSocksSocket(endpoint.first, endpoint.second)
+        try {
+            socket.soTimeout = 10000
+            val output = socket.getOutputStream()
+            output.write((query.size shr 8) and 0xFF)
+            output.write(query.size and 0xFF)
+            output.write(query)
+            output.flush()
+
+            val input = socket.getInputStream()
+            val responseLength = readUnsignedShort(input)
+            return readFully(input, responseLength)
+        } finally {
+            socket.close()
+        }
+    }
+
+    private fun queryDnsOverTls(query: ByteArray): ByteArray? {
+        val endpoint = parseResolverEndpoint(appResolverValue, 853)
+        val rawSocket = openSocksSocket(endpoint.first, endpoint.second)
+        try {
+            val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            val sslSocket = sslFactory.createSocket(
+                rawSocket,
+                endpoint.first,
+                endpoint.second,
+                true
+            ) as SSLSocket
+            sslSocket.soTimeout = 10000
+            sslSocket.startHandshake()
+
+            val output = sslSocket.getOutputStream()
+            output.write((query.size shr 8) and 0xFF)
+            output.write(query.size and 0xFF)
+            output.write(query)
+            output.flush()
+
+            val input = sslSocket.getInputStream()
+            val responseLength = readUnsignedShort(input)
+            return readFully(input, responseLength)
+        } finally {
+            rawSocket.close()
+        }
+    }
+
+    private fun queryDnsOverHttps(query: ByteArray): ByteArray? {
+        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(proxyHost, proxyPort))
+        val client = OkHttpClient.Builder()
+            .proxy(proxy)
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        val body = query.toRequestBody("application/dns-message".toMediaType())
+        val request = Request.Builder()
+            .url(appResolverValue)
+            .header("Accept", "application/dns-message")
+            .header("Content-Type", "application/dns-message")
+            .post(body)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.w(TAG, "DoH DNS query failed with HTTP ${response.code}")
+                return null
+            }
+            return response.body?.bytes()
+        }
+    }
+
+    private fun openSocksSocket(host: String, port: Int): Socket {
+        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(proxyHost, proxyPort))
+        val socket = Socket(proxy)
+        socket.connect(InetSocketAddress.createUnresolved(host, port), 10000)
+        socket.tcpNoDelay = true
+        return socket
+    }
+
+    private fun parseResolverEndpoint(value: String, defaultPort: Int): Pair<String, Int> {
+        val normalized = value.trim()
+        if (!normalized.contains(":")) {
+            return Pair(normalized, defaultPort)
+        }
+
+        val lastColon = normalized.lastIndexOf(':')
+        val host = normalized.substring(0, lastColon)
+        val port = normalized.substring(lastColon + 1).toIntOrNull() ?: defaultPort
+        return Pair(host, port)
+    }
+
+    private fun readUnsignedShort(input: java.io.InputStream): Int {
+        val high = input.read()
+        val low = input.read()
+        if (high == -1 || low == -1) {
+            throw EOFException("Unexpected EOF reading DNS length")
+        }
+        return (high shl 8) or low
+    }
+
+    private fun readFully(input: java.io.InputStream, length: Int): ByteArray {
+        val buffer = ByteArray(length)
+        var offset = 0
+        while (offset < length) {
+            val count = input.read(buffer, offset, length - offset)
+            if (count == -1) {
+                throw EOFException("Unexpected EOF reading DNS response")
+            }
+            offset += count
+        }
+        return buffer
     }
 
     private fun disconnect() {

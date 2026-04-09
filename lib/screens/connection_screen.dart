@@ -233,7 +233,17 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             const Divider(),
             _buildInfoTile('Config', state.activeConfig!.name),
             _buildInfoTile('Domain', state.activeConfig!.tunnelDomain),
-            _buildInfoTile('DNS Server', state.activeDns!.displayName),
+            _buildInfoTile('Bootstrap DNS', state.bootstrapDnsLabel),
+            _buildInfoTile('App DNS', state.appDnsLabel),
+            if (state.isStrictDnsActive &&
+                state.activeDns?.isSystemResolver == true)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Strict DNS mode is active. Local DNS is bootstrap-only and app DNS is tunneled through Google DNS.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ),
           ],
         ),
       ),
@@ -379,6 +389,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       proxyHost: '127.0.0.1',
       proxyPort: state.proxyPort,
       resolver: state.activeDns!,
+      appDnsResolver: state.effectiveAppDns,
+      strictDnsMode: state.isStrictDnsActive,
       tunnelDomain: state.activeConfig!.tunnelDomain,
       publicKey: state.activeConfig!.publicKey,
     );

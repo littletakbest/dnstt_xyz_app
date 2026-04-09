@@ -426,13 +426,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
             // DNS info
             if (state.activeDns != null)
-              _buildInfoItem(
-                context,
-                Icons.dns,
-                'DNS',
-                state.useAutoDns
-                    ? '${state.activeDns!.displayAddress} (Local)'
-                    : state.activeDns!.displayName,
+              Column(
+                children: [
+                  _buildInfoItem(
+                    context,
+                    Icons.dns,
+                    'Bootstrap DNS',
+                    state.bootstrapDnsLabel,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildInfoItem(
+                    context,
+                    Icons.shield,
+                    'App DNS',
+                    state.appDnsLabel,
+                  ),
+                  if (state.isStrictDnsActive &&
+                      state.activeDns?.isSystemResolver == true) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Strict mode is on. Local DNS is used only to start the tunnel, and normal app DNS is tunneled through Google DNS to prevent leaks.',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ],
               )
             else
               _buildInfoItem(
@@ -714,6 +732,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 'Note: Change takes effect on next connection.',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
+              if (Platform.isAndroid &&
+                  _connectionMode == ConnectionMode.vpn) ...[
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Strict DNS'),
+                  subtitle: const Text(
+                    'Prevents DNS leaks from normal apps. Local DNS is bootstrap-only in this mode and app DNS falls back to 8.8.8.8.',
+                  ),
+                  value: state.strictDnsMode,
+                  onChanged: (value) async {
+                    await state.setStrictDnsMode(value);
+                    if (stfContext.mounted) {
+                      setDialogState(() {});
+                    }
+                  },
+                ),
+              ],
             ],
           ),
         ),
@@ -867,6 +903,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final config = state.activeConfig!;
       success = await _vpnService.connectSshTunnelVpn(
         resolver: resolver!,
+        appDnsResolver: state.effectiveAppDns,
+        strictDnsMode: state.isStrictDnsActive,
         tunnelDomain: config.tunnelDomain,
         publicKey: config.publicKey,
         sshUsername: config.sshUsername!,
@@ -889,6 +927,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final config = state.activeConfig!;
       success = await _vpnService.connectSlipstream(
         resolver: resolver!,
+        appDnsResolver: state.effectiveAppDns,
+        strictDnsMode: state.isStrictDnsActive,
         tunnelDomain: config.tunnelDomain,
         congestionControl: config.congestionControl ?? 'dcubic',
         keepAliveInterval: config.keepAliveInterval ?? 400,
@@ -908,6 +948,8 @@ class _HomeScreenState extends State<HomeScreen> {
         proxyHost: '127.0.0.1',
         proxyPort: state.proxyPort,
         resolver: resolver!,
+        appDnsResolver: state.effectiveAppDns,
+        strictDnsMode: state.isStrictDnsActive,
         tunnelDomain: state.activeConfig?.tunnelDomain,
         publicKey: state.activeConfig?.publicKey,
       );
