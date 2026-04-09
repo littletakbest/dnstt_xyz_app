@@ -8,7 +8,7 @@ import '../services/vpn_service.dart';
 import '../models/dnstt_config.dart';
 import 'dns_management_screen.dart';
 import 'config_management_screen.dart';
-import 'donate_screen.dart';
+import 'log_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -61,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('DNSTT.XYZ'), centerTitle: true),
+      appBar: AppBar(title: const Text('littlednst'), centerTitle: true),
       body: Consumer<AppState>(
         builder: (context, state, _) {
           return SingleChildScrollView(
@@ -652,23 +652,25 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 12),
         _buildMenuCard(
           context,
-          icon: Icons.favorite,
-          title: 'Support Us',
-          subtitle: 'Donate to help improve the app',
+          icon: Icons.receipt_long,
+          title: 'Logs',
+          subtitle: '${state.logs.length} logs',
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const DonateScreen()),
+            MaterialPageRoute(builder: (_) => const LogScreen()),
           ),
-          color: Colors.red,
+          color: Colors.amber[800],
         ),
         const SizedBox(height: 12),
         _buildMenuCard(
           context,
-          icon: Icons.language,
-          title: 'Website',
-          subtitle: 'Visit dnstt.xyz',
+          icon: Icons.code,
+          title: 'GitHub',
+          subtitle: 'github.com/littletakbest/dnstt_xyz_app',
           onTap: () async {
-            final url = Uri.parse('https://dnstt.xyz');
+            final url = Uri.parse(
+              'https://github.com/littletakbest/dnstt_xyz_app',
+            );
             if (await canLaunchUrl(url)) {
               await launchUrl(url, mode: LaunchMode.externalApplication);
             }
@@ -789,8 +791,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _connect(BuildContext context, AppState state) async {
     if (state.useAutoDns) {
+      state.addLog('Refreshing local DNS before connecting');
       await state.refreshAutoDns();
       if (state.activeDns == null) {
+        state.addLog(state.autoDnsError ?? 'Could not detect system DNS');
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -813,6 +817,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ? state.getResolverSupportMessage(resolver)
         : null;
     if (resolverMessage != null) {
+      state.addLog(resolverMessage);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(resolverMessage), backgroundColor: Colors.red),
@@ -839,6 +844,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (isSshTunnel) {
       final config = state.activeConfig!;
       if (config.sshUsername == null || config.sshUsername!.isEmpty) {
+        state.addLog('SSH username is missing');
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -853,6 +859,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if ((config.sshPassword == null || config.sshPassword!.isEmpty) &&
           (config.sshPrivateKey == null || config.sshPrivateKey!.isEmpty)) {
+        state.addLog('SSH password or private key is missing');
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -868,8 +875,10 @@ class _HomeScreenState extends State<HomeScreen> {
     // Request VPN permission first (no-op on desktop and proxy mode)
     final needsVpnPermission = !isDesktop && !useProxyMode;
     if (needsVpnPermission) {
+      state.addLog('Requesting VPN permission');
       final permissionGranted = await _vpnService.requestPermission();
       if (!permissionGranted) {
+        state.addLog('$connectionType permission denied');
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -969,6 +978,7 @@ class _HomeScreenState extends State<HomeScreen> {
         } else {
           successMessage = '$protocolName VPN connected';
         }
+        state.addLog(successMessage);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(successMessage),
@@ -978,6 +988,7 @@ class _HomeScreenState extends State<HomeScreen> {
       } else {
         final error = _vpnService.lastError;
         final displayError = state.describeConnectionFailure(error);
+        state.addLog('Failed to start $connectionType: $displayError');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to start $connectionType: $displayError'),
@@ -1010,6 +1021,7 @@ class _HomeScreenState extends State<HomeScreen> {
       } else {
         disconnectMessage = 'VPN disconnected';
       }
+      state.addLog(disconnectMessage);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(disconnectMessage)));
@@ -1025,6 +1037,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await _vpnService.disconnect();
     }
     state.setConnectionStatus(ConnectionStatus.disconnected);
+    state.addLog('Connection cancelled');
 
     if (context.mounted) {
       ScaffoldMessenger.of(

@@ -1,16 +1,9 @@
-# Android ARM64 Tunnel Client
+# LittleDNST
 
-Android-only Flutter app for DNS tunneling with two transports:
+Android-only DNS tunneling with two transports:
 - `DNSTT` for KCP + Noise over DNS
 - `Slipstream` for QUIC-over-DNS
 
-## Status
-
-This repository is now scoped to:
-- Android only
-- `arm64-v8a` only
-
-Desktop targets and desktop release artifacts are no longer part of this repo.
 
 ## Build
 
@@ -39,8 +32,6 @@ Output:
 flutter build appbundle --release
 ```
 
-The Gradle config is locked to `arm64-v8a`, so generated Android artifacts stay ARM64-only.
-
 ## Rebuilding Native Components
 
 ### Rebuild `dnstt.aar` for Android ARM64
@@ -67,10 +58,6 @@ vendor/slipstream-rust/  Slipstream source
 scripts/                 Android/native helper scripts
 ```
 
-## Notes For Rebranding
-
-The repo has been narrowed to Android ARM64 so packaging is simpler before a rename.
-The current package id / method channels / Kotlin namespace still use the old identifiers and can be changed cleanly once the new brand name is decided.
 
 ## License
 

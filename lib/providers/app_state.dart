@@ -8,6 +8,23 @@ import '../services/system_dns_service.dart';
 
 enum ConnectionStatus { disconnected, connecting, connected, error }
 
+class AppLogEntry {
+  final DateTime timestamp;
+  final String message;
+
+  const AppLogEntry({required this.timestamp, required this.message});
+
+  String get timestampLabel {
+    final year = timestamp.year.toString().padLeft(4, '0');
+    final month = timestamp.month.toString().padLeft(2, '0');
+    final day = timestamp.day.toString().padLeft(2, '0');
+    final hour = timestamp.hour.toString().padLeft(2, '0');
+    final minute = timestamp.minute.toString().padLeft(2, '0');
+    final second = timestamp.second.toString().padLeft(2, '0');
+    return '$year-$month-$day $hour:$minute:$second';
+  }
+}
+
 class AppState extends ChangeNotifier {
   StorageService? _storage;
   List<DnsServer> _dnsServers = [];
@@ -30,6 +47,7 @@ class AppState extends ChangeNotifier {
   bool _strictDnsMode = true;
   DnsServer? _autoDnsServer;
   String? _autoDnsError;
+  final List<AppLogEntry> _logs = [];
   DnsServer get localDnsPlaceholder =>
       DnsPresets.all().firstWhere((s) => s.id == DnsServer.localDnsId);
 
@@ -53,6 +71,7 @@ class AppState extends ChangeNotifier {
   int get proxyPort => _proxyPort;
   String get connectionMode => _connectionMode;
   bool get strictDnsMode => _strictDnsMode;
+  List<AppLogEntry> get logs => List.unmodifiable(_logs);
   bool get isAndroidVpnMode =>
       defaultTargetPlatform == TargetPlatform.android &&
       _connectionMode == 'vpn';
@@ -590,6 +609,27 @@ class AppState extends ChangeNotifier {
   void setConnectionStatus(ConnectionStatus status, [String? error]) {
     _connectionStatus = status;
     _connectionError = error;
+    final details = error == null || error.trim().isEmpty ? null : error.trim();
+    final message = switch (status) {
+      ConnectionStatus.connected => 'Connection established',
+      ConnectionStatus.connecting => 'Connecting',
+      ConnectionStatus.disconnected => 'Disconnected',
+      ConnectionStatus.error => details == null ? 'Connection error' : 'Connection error: $details',
+    };
+    addLog(message);
+    notifyListeners();
+  }
+
+  void addLog(String message) {
+    _logs.add(AppLogEntry(timestamp: DateTime.now(), message: message));
+    if (_logs.length > 200) {
+      _logs.removeRange(0, _logs.length - 200);
+    }
+    notifyListeners();
+  }
+
+  void clearLogs() {
+    _logs.clear();
     notifyListeners();
   }
 

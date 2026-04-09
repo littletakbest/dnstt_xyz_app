@@ -1,4 +1,4 @@
-DNSTT Client tunnels your internet traffic through DNS queries using the dnstt protocol. This creates a VPN connection that routes all device traffic through DNS, helping bypass network restrictions.
+littlednst tunnels your internet traffic through DNS queries using the dnstt protocol. This creates a VPN connection that routes all device traffic through DNS, helping bypass network restrictions.
 
 Features:
 * Full device VPN tunneling on Android

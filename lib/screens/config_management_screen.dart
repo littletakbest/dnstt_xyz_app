@@ -71,7 +71,7 @@ class ConfigManagementScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.public),
                     SizedBox(width: 8),
-                    Text('Import from dnstt.xyz'),
+                    Text('Import curated list'),
                   ],
                 ),
               ),
@@ -641,7 +641,7 @@ class ConfigManagementScreen extends StatelessWidget {
               children: [
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
-                Text('Fetching servers from dnstt.xyz...'),
+                Text('Fetching curated server list...'),
               ],
             ),
           ),
@@ -657,7 +657,7 @@ class ConfigManagementScreen extends StatelessWidget {
 
         if (result.configs.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No configs found on dnstt.xyz')),
+            const SnackBar(content: Text('No configs found in the curated list')),
           );
           return;
         }
@@ -688,7 +688,7 @@ class ConfigManagementScreen extends StatelessWidget {
         Navigator.pop(context); // Close loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to fetch from dnstt.xyz: ${e.toString()}'),
+            content: Text('Failed to fetch curated list: ${e.toString()}'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),

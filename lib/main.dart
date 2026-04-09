@@ -14,18 +14,18 @@ void main() async {
   runApp(
     ChangeNotifierProvider.value(
       value: appState,
-      child: const DnsttClientApp(),
+      child: const LittleDnstApp(),
     ),
   );
 }
 
-class DnsttClientApp extends StatelessWidget {
-  const DnsttClientApp({super.key});
+class LittleDnstApp extends StatelessWidget {
+  const LittleDnstApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DNSTT Client',
+      title: 'littlednst',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(

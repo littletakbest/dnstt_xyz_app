@@ -217,7 +217,7 @@ class ConfigImportExportService {
                   dnsServers.add(DnsServer(
                     address: dnsIp,
                     name: '$name DNS',
-                    provider: 'dnstt.xyz',
+                    provider: 'littlednst',
                   ));
                 }
               }
