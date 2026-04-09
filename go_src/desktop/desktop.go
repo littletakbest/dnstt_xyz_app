@@ -33,7 +33,7 @@ var (
 )
 
 //export dnstt_create_client
-func dnstt_create_client(dnsServer *C.char, tunnelDomain *C.char, pubKeyHex *C.char, listenAddr *C.char) C.int {
+func dnstt_create_client(resolverType *C.char, resolverValue *C.char, tunnelDomain *C.char, pubKeyHex *C.char, listenAddr *C.char) C.int {
 	clientLock.Lock()
 	defer clientLock.Unlock()
 
@@ -44,15 +44,31 @@ func dnstt_create_client(dnsServer *C.char, tunnelDomain *C.char, pubKeyHex *C.c
 		client = nil
 	}
 
-	c, err := mobile.NewClient(
-		C.GoString(dnsServer),
-		C.GoString(tunnelDomain),
-		C.GoString(pubKeyHex),
-		C.GoString(listenAddr),
-	)
-	if err != nil {
-		lastError = fmt.Sprintf("failed to create client: %v", err)
-		return -1
+	var c *mobile.DnsttClient
+	var err error
+	if C.GoString(resolverType) != "udp" {
+		c, err = mobile.NewClientWithResolver(
+			C.GoString(resolverType),
+			C.GoString(resolverValue),
+			C.GoString(tunnelDomain),
+			C.GoString(pubKeyHex),
+			C.GoString(listenAddr),
+		)
+		if err != nil {
+			lastError = fmt.Sprintf("failed to create client: %v", err)
+			return -1
+		}
+	} else {
+		c, err = mobile.NewClient(
+			C.GoString(resolverValue),
+			C.GoString(tunnelDomain),
+			C.GoString(pubKeyHex),
+			C.GoString(listenAddr),
+		)
+		if err != nil {
+			lastError = fmt.Sprintf("failed to create client: %v", err)
+			return -1
+		}
 	}
 
 	client = c
@@ -133,8 +149,9 @@ func getNextTestPort() int {
 // 1. Creating a temporary dnstt client
 // 2. Making an HTTP request through the SOCKS5 proxy
 // 3. Returns latency in milliseconds on success, -1 on failure
-func dnstt_test_dns_server(dnsServer *C.char, tunnelDomain *C.char, pubKeyHex *C.char, testUrl *C.char, timeoutMs C.int) C.int {
-	dns := C.GoString(dnsServer)
+func dnstt_test_dns_server(resolverType *C.char, resolverValue *C.char, tunnelDomain *C.char, pubKeyHex *C.char, testUrl *C.char, timeoutMs C.int) C.int {
+	resolverMode := C.GoString(resolverType)
+	resolver := C.GoString(resolverValue)
 	domain := C.GoString(tunnelDomain)
 	pubKey := C.GoString(pubKeyHex)
 	url := C.GoString(testUrl)
@@ -144,10 +161,16 @@ func dnstt_test_dns_server(dnsServer *C.char, tunnelDomain *C.char, pubKeyHex *C
 	port := getNextTestPort()
 	listenAddr := fmt.Sprintf("127.0.0.1:%d", port)
 
-	log.Printf("Testing DNS %s with tunnel %s on port %d", dns, domain, port)
+	log.Printf("Testing DNS %s (%s) with tunnel %s on port %d", resolver, resolverMode, domain, port)
 
 	// Create temporary client
-	testClient, err := mobile.NewClient(dns, domain, pubKey, listenAddr)
+	var testClient *mobile.DnsttClient
+	var err error
+	if resolverMode == "udp" || resolverMode == "" {
+		testClient, err = mobile.NewClient(resolver, domain, pubKey, listenAddr)
+	} else {
+		testClient, err = mobile.NewClientWithResolver(resolverMode, resolver, domain, pubKey, listenAddr)
+	}
 	if err != nil {
 		lastError = fmt.Sprintf("failed to create test client: %v", err)
 		log.Printf("Test failed: %s", lastError)
@@ -211,7 +234,7 @@ func dnstt_test_dns_server(dnsServer *C.char, tunnelDomain *C.char, pubKeyHex *C
 	latency := time.Since(start)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
-		log.Printf("Test SUCCESS for DNS %s: %dms", dns, latency.Milliseconds())
+		log.Printf("Test SUCCESS for DNS %s: %dms", resolver, latency.Milliseconds())
 		return C.int(latency.Milliseconds())
 	}
 

@@ -29,6 +29,9 @@ class DnsttProxyService : Service() {
         const val ACTION_DISCONNECT = "xyz.dnstt.app.PROXY_DISCONNECT"
 
         const val EXTRA_DNS_SERVER = "dns_server"
+        const val EXTRA_RESOLVER_TYPE = "resolver_type"
+        const val EXTRA_RESOLVER_VALUE = "resolver_value"
+        const val EXTRA_RESOLVER_DISPLAY_NAME = "resolver_display_name"
         const val EXTRA_TUNNEL_DOMAIN = "tunnel_domain"
         const val EXTRA_PUBLIC_KEY = "public_key"
         const val EXTRA_PROXY_PORT = "proxy_port"
@@ -39,6 +42,9 @@ class DnsttProxyService : Service() {
     }
 
     private var dnsServer: String = "8.8.8.8"
+    private var resolverType: String = "udp"
+    private var resolverValue: String = "8.8.8.8"
+    private var resolverDisplayName: String = "8.8.8.8"
     private var tunnelDomain: String = ""
     private var publicKey: String = ""
     private var proxyPort: Int = 7000
@@ -58,6 +64,9 @@ class DnsttProxyService : Service() {
         return when (intent?.action) {
             ACTION_CONNECT -> {
                 dnsServer = intent.getStringExtra(EXTRA_DNS_SERVER) ?: "8.8.8.8"
+                resolverType = intent.getStringExtra(EXTRA_RESOLVER_TYPE) ?: "udp"
+                resolverValue = intent.getStringExtra(EXTRA_RESOLVER_VALUE) ?: dnsServer
+                resolverDisplayName = intent.getStringExtra(EXTRA_RESOLVER_DISPLAY_NAME) ?: dnsServer
                 tunnelDomain = intent.getStringExtra(EXTRA_TUNNEL_DOMAIN) ?: ""
                 publicKey = intent.getStringExtra(EXTRA_PUBLIC_KEY) ?: ""
                 proxyPort = intent.getIntExtra(EXTRA_PROXY_PORT, 7000)
@@ -169,12 +178,16 @@ class DnsttProxyService : Service() {
             }
 
             Log.d(TAG, "Starting DNSTT client")
-            Log.d(TAG, "DNS: $dnsServer, Domain: $tunnelDomain")
+            Log.d(TAG, "DNS: $resolverDisplayName ($resolverType), Domain: $tunnelDomain")
 
             val listenAddr = if (shareProxy) "0.0.0.0:$proxyPort" else "127.0.0.1:$proxyPort"
             Log.d(TAG, "Listen address: $listenAddr")
 
-            dnsttClient = Mobile.newClient(dnsServer, tunnelDomain, publicKey, listenAddr)
+            dnsttClient = if (resolverType == "udp" || resolverType == "system") {
+                Mobile.newClient(dnsServer, tunnelDomain, publicKey, listenAddr)
+            } else {
+                Mobile.newClientWithResolver(resolverType, resolverValue, tunnelDomain, publicKey, listenAddr)
+            }
 
             if (shareProxy) {
                 dnsttClient?.setShareProxy(true)
@@ -377,7 +390,7 @@ class DnsttProxyService : Service() {
         val (title, text, icon) = when (state) {
             "connecting" -> Triple(
                 "DNSTT Proxy Connecting...",
-                "Establishing tunnel via $dnsServer",
+                "Establishing tunnel via $resolverDisplayName",
                 android.R.drawable.ic_popup_sync
             )
             "connected" -> Triple(

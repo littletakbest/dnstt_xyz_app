@@ -59,7 +59,7 @@ class _TestScreenState extends State<TestScreen> {
             );
           }
 
-          if (state.dnsServers.isEmpty) {
+          if (state.visibleDnsServers.isEmpty) {
             return const Center(
               child: Text('No DNS servers to test. Import some first.'),
             );
@@ -141,9 +141,9 @@ class _TestScreenState extends State<TestScreen> {
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: state.dnsServers.length,
+                  itemCount: state.visibleDnsServers.length,
                   itemBuilder: (context, index) {
-                    final server = state.dnsServers[index];
+                    final server = state.visibleDnsServers[index];
                     final isActive = state.activeDns?.id == server.id;
 
                     return Card(
@@ -207,7 +207,7 @@ class _TestScreenState extends State<TestScreen> {
                     children: [
                       _buildStat(
                         'Total',
-                        state.dnsServers.length.toString(),
+                        state.visibleDnsServers.length.toString(),
                         Colors.blue,
                       ),
                       _buildStat(
@@ -217,7 +217,7 @@ class _TestScreenState extends State<TestScreen> {
                       ),
                       _buildStat(
                         'Failed',
-                        state.dnsServers
+                        state.visibleDnsServers
                             .where((s) => s.lastTested != null && !s.isWorking)
                             .length
                             .toString(),
@@ -294,7 +294,7 @@ class _TestScreenState extends State<TestScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Starting test for ${state.dnsServers.length} DNS servers...')),
+      SnackBar(content: Text('Starting test for ${state.visibleDnsServers.length} DNS servers...')),
     );
 
     // Request VPN permission first
@@ -317,14 +317,23 @@ class _TestScreenState extends State<TestScreen> {
     setState(() {
       _isTesting = true;
       _testedCount = 0;
-      _totalCount = state.dnsServers.length;
+      _totalCount = state.visibleDnsServers.length;
       _currentlyTesting = null;
     });
 
-    for (final server in state.dnsServers) {
+    for (final server in state.visibleDnsServers) {
       if (!_isTesting || !mounted) break;
 
       try {
+        final supportMessage = state.getResolverSupportMessage(server);
+        if (supportMessage != null) {
+          await state.updateDnsServerStatus(server.id, false, message: supportMessage);
+          setState(() {
+            _testedCount++;
+          });
+          continue;
+        }
+
         setState(() {
           _currentlyTesting = server.address;
         });
@@ -339,7 +348,7 @@ class _TestScreenState extends State<TestScreen> {
           connected = await _vpnService.connect(
             proxyHost: '127.0.0.1',
             proxyPort: state.proxyPort,
-            dnsServer: server.address,
+            resolver: server,
             tunnelDomain: state.activeConfig?.tunnelDomain,
             publicKey: state.activeConfig?.publicKey,
           ).timeout(const Duration(seconds: 10));

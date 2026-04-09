@@ -121,54 +121,12 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
               onChanged: (value) => setState(() => _searchQuery = value),
             ),
           ),
-          // Auto DNS banner
-          Consumer<AppState>(
-            builder: (context, state, _) {
-              if (!state.useAutoDns) return const SizedBox.shrink();
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.auto_fix_high, color: Colors.blue[700], size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Local DNS is enabled (Beta)',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                          Text(
-                            state.activeDns != null
-                                ? 'Using system DNS: ${state.activeDns!.address}'
-                                : state.autoDnsError ?? 'Detecting...',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => state.setUseAutoDns(false),
-                      child: const Text('Disable'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
           // Test buttons row with progress
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Consumer<AppState>(
               builder: (context, state, _) {
-                final hasServers = state.dnsServers.isNotEmpty;
+                final hasServers = state.visibleDnsServers.isNotEmpty;
                 final isTestingAll = state.isTestingAll;
                 final isTestingSupported = state.isTestingSupported;
 
@@ -316,7 +274,7 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
           Expanded(
             child: Consumer<AppState>(
               builder: (context, state, _) {
-                final servers = _filterServers(state.dnsServers);
+                final servers = _filterServers(state.visibleDnsServers);
 
                 if (servers.isEmpty) {
                   return Center(
@@ -355,37 +313,39 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                         contentPadding: const EdgeInsets.only(left: 0, right: 8),
                         leading: Radio<String>(
                           value: server.id,
-                          groupValue: state.useAutoDns ? null : state.activeDns?.id,
-                          onChanged: state.useAutoDns ? null : (_) => state.setActiveDns(server),
+                          groupValue: state.activeDns?.id,
+                          onChanged: (_) => state.setActiveDns(server),
                           activeColor: Colors.green,
                         ),
                         title: Row(
                           children: [
                             Text(
-                              server.address,
+                              server.displayName,
                               style: const TextStyle(
-                                fontFamily: 'monospace',
                                 fontWeight: FontWeight.w500,
                                 fontSize: 14,
                               ),
                             ),
                             const SizedBox(width: 8),
+                            if (server.isPreset)
+                              _buildPresetBadge(server),
+                            if (server.isPreset) const SizedBox(width: 8),
                             // Status indicator inline with IP
                             if (server.lastTested != null)
                               _buildStatusBadge(server),
                           ],
                         ),
-                        subtitle: server.name != null
-                            ? Text(
-                                server.name!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                ),
-                              )
-                            : null,
+                        subtitle: Text(
+                          server.displayAddress.isNotEmpty
+                              ? '${server.subtitleText}\n${server.displayAddress}'
+                              : server.subtitleText,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -410,27 +370,33 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                                         size: 22,
                                         color: state.isTestingSupported ? null : Colors.grey,
                                       ),
-                                      onPressed: state.isTestingSupported
+                                      onPressed: state.getResolverSupportMessage(server) == null
                                           ? () => _testSingleDns(context, server)
-                                          : () => _showTestingNotSupportedError(context, state),
+                                          : () => ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(state.getResolverSupportMessage(server)!),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              ),
                                       tooltip: state.isTestingSupported
                                           ? 'Test this DNS'
                                           : state.testingUnsupportedMessage,
                                     ),
                             ),
                             // Delete button
-                            SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                icon: const Icon(Icons.delete_outline, size: 22),
-                                onPressed: () => state.removeDnsServer(server.id),
+                            if (!server.isPreset)
+                              SizedBox(
+                                width: 40,
+                                height: 40,
+                                child: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  icon: const Icon(Icons.delete_outline, size: 22),
+                                  onPressed: () => state.removeDnsServer(server.id),
+                                ),
                               ),
-                            ),
                           ],
                         ),
-                        onTap: state.useAutoDns ? null : () => state.setActiveDns(server),
+                        onTap: () => state.setActiveDns(server),
                       ),
                     );
                   },
@@ -507,14 +473,35 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     }
   }
 
+  Widget _buildPresetBadge(DnsServer server) {
+    final label = switch (server.resolverType) {
+      DnsResolverType.doh => 'DoH',
+      DnsResolverType.dot => 'DoT',
+      DnsResolverType.system => 'Local',
+      DnsResolverType.udp => server.group == 'china' ? 'China' : 'Preset',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
   List<DnsServer> _filterServers(List<DnsServer> servers) {
     if (_searchQuery.isEmpty) return servers;
     final query = _searchQuery.toLowerCase();
     return servers.where((s) {
-      return s.address.contains(query) ||
-          (s.name?.toLowerCase().contains(query) ?? false) ||
+      return s.displayName.toLowerCase().contains(query) ||
+          s.displayAddress.toLowerCase().contains(query) ||
           (s.region?.toLowerCase().contains(query) ?? false) ||
-          (s.provider?.toLowerCase().contains(query) ?? false);
+          (s.provider?.toLowerCase().contains(query) ?? false) ||
+          (s.group?.toLowerCase().contains(query) ?? false);
     }).toList();
   }
 
@@ -581,7 +568,7 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
   Future<void> _testAllDnsServers(BuildContext context) async {
     final state = context.read<AppState>();
 
-    if (state.dnsServers.isEmpty) return;
+    if (state.visibleDnsServers.isEmpty) return;
 
     // Show confirmation dialog with test URL option
     final shouldStart = await _showTestConfirmationDialog(context, state);
@@ -596,7 +583,7 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Starting $testType for ${state.dnsServers.length} servers...'),
+          content: Text('Starting $testType for ${state.visibleDnsServers.length} servers...'),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -618,7 +605,7 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'This will test ${state.dnsServers.length} DNS servers by connecting through the DNSTT tunnel and making an HTTP request.',
+              'This will test ${state.visibleDnsServers.length} DNS servers by connecting through the tunnel and making an HTTP request.',
               style: const TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 16),

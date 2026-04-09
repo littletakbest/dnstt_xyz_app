@@ -46,6 +46,9 @@ class MainActivity : FlutterActivity() {
     private var pendingProxyHost: String? = null
     private var pendingProxyPort: Int? = null
     private var pendingDnsServer: String? = null
+    private var pendingResolverType: String? = null
+    private var pendingResolverValue: String? = null
+    private var pendingResolverDisplayName: String? = null
     private var pendingTunnelDomain: String? = null
     private var pendingPublicKey: String? = null
 
@@ -89,19 +92,24 @@ class MainActivity : FlutterActivity() {
                     val proxyHost = call.argument<String>("proxyHost") ?: "127.0.0.1"
                     val proxyPort = call.argument<Int>("proxyPort") ?: 7000
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverType = call.argument<String>("resolverType") ?: "udp"
+                    val resolverValue = call.argument<String>("resolverValue") ?: dnsServer
+                    val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val publicKey = call.argument<String>("publicKey") ?: ""
-                    connectVpn(proxyHost, proxyPort, dnsServer, tunnelDomain, publicKey, result)
+                    connectVpn(proxyHost, proxyPort, dnsServer, resolverType, resolverValue, resolverDisplayName, tunnelDomain, publicKey, result)
                 }
                 "disconnect" -> disconnectVpn(result)
                 "isConnected" -> result.success(DnsttVpnService.isRunning.get())
                 "testDnsServer" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: ""
+                    val resolverType = call.argument<String>("resolverType") ?: "udp"
+                    val resolverValue = call.argument<String>("resolverValue") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val publicKey = call.argument<String>("publicKey") ?: ""
                     val testUrl = call.argument<String>("testUrl") ?: "https://api.ipify.org?format=json"
                     val timeoutMs = call.argument<Int>("timeoutMs") ?: 15000
-                    testDnsServer(dnsServer, tunnelDomain, publicKey, testUrl, timeoutMs, result)
+                    testDnsServer(dnsServer, resolverType, resolverValue, tunnelDomain, publicKey, testUrl, timeoutMs, result)
                 }
                 "cancelAllTests" -> {
                     cancelAllTests()
@@ -113,10 +121,13 @@ class MainActivity : FlutterActivity() {
                 }
                 "connectProxy" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverType = call.argument<String>("resolverType") ?: "udp"
+                    val resolverValue = call.argument<String>("resolverValue") ?: dnsServer
+                    val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val publicKey = call.argument<String>("publicKey") ?: ""
                     val proxyPort = call.argument<Int>("proxyPort") ?: 7000
-                    connectProxyOnly(dnsServer, tunnelDomain, publicKey, proxyPort, result)
+                    connectProxyOnly(dnsServer, resolverType, resolverValue, resolverDisplayName, tunnelDomain, publicKey, proxyPort, result)
                 }
                 "disconnectProxy" -> {
                     disconnectProxyOnly(result)
@@ -126,6 +137,9 @@ class MainActivity : FlutterActivity() {
                 }
                 "connectSshTunnel" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverType = call.argument<String>("resolverType") ?: "udp"
+                    val resolverValue = call.argument<String>("resolverValue") ?: dnsServer
+                    val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val publicKey = call.argument<String>("publicKey") ?: ""
                     val sshUsername = call.argument<String>("sshUsername") ?: ""
@@ -133,19 +147,22 @@ class MainActivity : FlutterActivity() {
                     val sshPrivateKey = call.argument<String>("sshPrivateKey")
                     val shareProxy = call.argument<Boolean>("shareProxy") ?: false
                     connectSshTunnel(
-                        dnsServer, tunnelDomain, publicKey,
+                        dnsServer, resolverType, resolverValue, resolverDisplayName, tunnelDomain, publicKey,
                         sshUsername, sshPassword, sshPrivateKey, shareProxy, result
                     )
                 }
                 "connectSshTunnelVpn" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverType = call.argument<String>("resolverType") ?: "udp"
+                    val resolverValue = call.argument<String>("resolverValue") ?: dnsServer
+                    val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val publicKey = call.argument<String>("publicKey") ?: ""
                     val sshUsername = call.argument<String>("sshUsername") ?: ""
                     val sshPassword = call.argument<String>("sshPassword")
                     val sshPrivateKey = call.argument<String>("sshPrivateKey")
                     connectSshTunnelWithVpn(
-                        dnsServer, tunnelDomain, publicKey,
+                        dnsServer, resolverType, resolverValue, resolverDisplayName, tunnelDomain, publicKey,
                         sshUsername, sshPassword, sshPrivateKey, result
                     )
                 }
@@ -171,6 +188,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "connectProxyShared" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val publicKey = call.argument<String>("publicKey") ?: ""
                     val proxyPort = call.argument<Int>("proxyPort") ?: 7000
@@ -179,20 +197,22 @@ class MainActivity : FlutterActivity() {
                 // Slipstream methods
                 "connectSlipstream" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val congestionControl = call.argument<String>("congestionControl") ?: "dcubic"
                     val keepAliveInterval = call.argument<Int>("keepAliveInterval") ?: 400
                     val gso = call.argument<Boolean>("gso") ?: false
-                    connectSlipstreamVpn(dnsServer, tunnelDomain, congestionControl, keepAliveInterval, gso, result)
+                    connectSlipstreamVpn(dnsServer, resolverDisplayName, tunnelDomain, congestionControl, keepAliveInterval, gso, result)
                 }
                 "connectSlipstreamProxy" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val proxyPort = call.argument<Int>("proxyPort") ?: 7000
                     val congestionControl = call.argument<String>("congestionControl") ?: "dcubic"
                     val keepAliveInterval = call.argument<Int>("keepAliveInterval") ?: 400
                     val gso = call.argument<Boolean>("gso") ?: false
-                    connectSlipstreamProxyOnly(dnsServer, tunnelDomain, proxyPort, congestionControl, keepAliveInterval, gso, result)
+                    connectSlipstreamProxyOnly(dnsServer, resolverDisplayName, tunnelDomain, proxyPort, congestionControl, keepAliveInterval, gso, result)
                 }
                 "disconnectSlipstreamProxy" -> {
                     disconnectSlipstreamProxyOnly(result)
@@ -212,13 +232,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "testSlipstreamDnsServer" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: ""
+                    val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val testUrl = call.argument<String>("testUrl") ?: "https://api.ipify.org?format=json"
                     val timeoutMs = call.argument<Int>("timeoutMs") ?: 15000
                     val congestionControl = call.argument<String>("congestionControl") ?: "dcubic"
                     val keepAliveInterval = call.argument<Int>("keepAliveInterval") ?: 400
                     val gso = call.argument<Boolean>("gso") ?: false
-                    testSlipstreamDnsServer(dnsServer, tunnelDomain, testUrl, timeoutMs, congestionControl, keepAliveInterval, gso, result)
+                    testSlipstreamDnsServer(dnsServer, resolverDisplayName, tunnelDomain, testUrl, timeoutMs, congestionControl, keepAliveInterval, gso, result)
                 }
                 else -> result.notImplemented()
             }
@@ -274,6 +295,9 @@ class MainActivity : FlutterActivity() {
         proxyHost: String,
         proxyPort: Int,
         dnsServer: String,
+        resolverType: String,
+        resolverValue: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         publicKey: String,
         result: MethodChannel.Result
@@ -288,12 +312,15 @@ class MainActivity : FlutterActivity() {
             pendingProxyHost = proxyHost
             pendingProxyPort = proxyPort
             pendingDnsServer = dnsServer
+            pendingResolverType = resolverType
+            pendingResolverValue = resolverValue
+            pendingResolverDisplayName = resolverDisplayName
             startActivityForResult(intent, VPN_REQUEST_CODE)
             return
         }
 
         // Start VPN service
-        startVpnService(proxyHost, proxyPort, dnsServer, tunnelDomain, publicKey)
+        startVpnService(proxyHost, proxyPort, dnsServer, resolverType, resolverValue, resolverDisplayName, tunnelDomain, publicKey)
         result.success(true)
     }
 
@@ -318,7 +345,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startVpnService(proxyHost: String, proxyPort: Int, dnsServer: String, tunnelDomain: String, publicKey: String) {
+    private fun startVpnService(proxyHost: String, proxyPort: Int, dnsServer: String, resolverType: String, resolverValue: String, resolverDisplayName: String, tunnelDomain: String, publicKey: String) {
         // Stop any proxy services first
         stopAllProxyServices()
 
@@ -327,6 +354,9 @@ class MainActivity : FlutterActivity() {
             putExtra(DnsttVpnService.EXTRA_PROXY_HOST, proxyHost)
             putExtra(DnsttVpnService.EXTRA_PROXY_PORT, proxyPort)
             putExtra(DnsttVpnService.EXTRA_DNS_SERVER, dnsServer)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_TYPE, resolverType)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_VALUE, resolverValue)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_DISPLAY_NAME, resolverDisplayName)
             putExtra(DnsttVpnService.EXTRA_TUNNEL_DOMAIN, tunnelDomain)
             putExtra(DnsttVpnService.EXTRA_PUBLIC_KEY, publicKey)
         }
@@ -345,6 +375,9 @@ class MainActivity : FlutterActivity() {
     // Now uses DnsttProxyService to run in background
     private fun connectProxyOnly(
         dnsServer: String,
+        resolverType: String,
+        resolverValue: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         publicKey: String,
         proxyPort: Int,
@@ -377,6 +410,9 @@ class MainActivity : FlutterActivity() {
         val serviceIntent = Intent(this, DnsttProxyService::class.java).apply {
             action = DnsttProxyService.ACTION_CONNECT
             putExtra(DnsttProxyService.EXTRA_DNS_SERVER, dnsServer)
+            putExtra(DnsttProxyService.EXTRA_RESOLVER_TYPE, resolverType)
+            putExtra(DnsttProxyService.EXTRA_RESOLVER_VALUE, resolverValue)
+            putExtra(DnsttProxyService.EXTRA_RESOLVER_DISPLAY_NAME, resolverDisplayName)
             putExtra(DnsttProxyService.EXTRA_TUNNEL_DOMAIN, tunnelDomain)
             putExtra(DnsttProxyService.EXTRA_PUBLIC_KEY, publicKey)
             putExtra(DnsttProxyService.EXTRA_PROXY_PORT, proxyPort)
@@ -465,6 +501,7 @@ class MainActivity : FlutterActivity() {
     // Slipstream VPN mode
     private fun connectSlipstreamVpn(
         dnsServer: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         congestionControl: String,
         keepAliveInterval: Int,
@@ -474,17 +511,18 @@ class MainActivity : FlutterActivity() {
         val intent = VpnService.prepare(this)
         if (intent != null) {
             pendingResult = result
-            pendingSlipstreamVpnParams = SlipstreamVpnParams(dnsServer, tunnelDomain, congestionControl, keepAliveInterval, gso)
+            pendingSlipstreamVpnParams = SlipstreamVpnParams(dnsServer, resolverDisplayName, tunnelDomain, congestionControl, keepAliveInterval, gso)
             startActivityForResult(intent, VPN_REQUEST_CODE)
             return
         }
 
-        startSlipstreamVpnService(dnsServer, tunnelDomain, congestionControl, keepAliveInterval, gso)
+        startSlipstreamVpnService(dnsServer, resolverDisplayName, tunnelDomain, congestionControl, keepAliveInterval, gso)
         result.success(true)
     }
 
     private data class SlipstreamVpnParams(
         val dnsServer: String,
+        val resolverDisplayName: String,
         val tunnelDomain: String,
         val congestionControl: String,
         val keepAliveInterval: Int,
@@ -495,6 +533,7 @@ class MainActivity : FlutterActivity() {
 
     private fun startSlipstreamVpnService(
         dnsServer: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         congestionControl: String,
         keepAliveInterval: Int,
@@ -508,6 +547,9 @@ class MainActivity : FlutterActivity() {
             putExtra(DnsttVpnService.EXTRA_PROXY_HOST, "127.0.0.1")
             putExtra(DnsttVpnService.EXTRA_PROXY_PORT, 7000)
             putExtra(DnsttVpnService.EXTRA_DNS_SERVER, dnsServer)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_TYPE, "udp")
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_VALUE, dnsServer)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_DISPLAY_NAME, resolverDisplayName)
             putExtra(DnsttVpnService.EXTRA_TUNNEL_DOMAIN, tunnelDomain)
             putExtra(DnsttVpnService.EXTRA_PUBLIC_KEY, "")
             putExtra(DnsttVpnService.EXTRA_TRANSPORT_TYPE, "slipstream")
@@ -521,6 +563,7 @@ class MainActivity : FlutterActivity() {
     // Slipstream proxy-only mode
     private fun connectSlipstreamProxyOnly(
         dnsServer: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         proxyPort: Int,
         congestionControl: String,
@@ -577,6 +620,7 @@ class MainActivity : FlutterActivity() {
     // Slipstream DNS server testing
     private fun testSlipstreamDnsServer(
         dnsServer: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         testUrl: String,
         timeoutMs: Int,
@@ -684,6 +728,9 @@ class MainActivity : FlutterActivity() {
     // Flow: DNSTT tunnel (port 7001 internal) -> SSH client -> SSH dynamic port forwarding -> local SOCKS5 proxy (port 1080)
     private fun connectSshTunnel(
         dnsServer: String,
+        resolverType: String,
+        resolverValue: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         publicKey: String,
         sshUsername: String,
@@ -703,7 +750,7 @@ class MainActivity : FlutterActivity() {
             try {
                 // Step 1: Start DNSTT proxy on internal port 7001 (creates tunnel to SSH server)
                 val listenAddr = "127.0.0.1:7001"
-                sshDnsttClient = Mobile.newClient(dnsServer, tunnelDomain, publicKey, listenAddr)
+                sshDnsttClient = createDnsttClient(resolverType, resolverValue, dnsServer, tunnelDomain, publicKey, listenAddr)
                 sshDnsttClient?.start()
                 Log.d("DnsttSsh", "DNSTT tunnel started on $listenAddr")
 
@@ -806,6 +853,9 @@ class MainActivity : FlutterActivity() {
     // SSH tunnel with VPN mode - routes all device traffic through SSH tunnel
     private fun connectSshTunnelWithVpn(
         dnsServer: String,
+        resolverType: String,
+        resolverValue: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         publicKey: String,
         sshUsername: String,
@@ -817,17 +867,20 @@ class MainActivity : FlutterActivity() {
         val intent = VpnService.prepare(this)
         if (intent != null) {
             pendingResult = result
-            pendingSshVpnParams = SshVpnParams(dnsServer, tunnelDomain, publicKey, sshUsername, sshPassword, sshPrivateKey)
+            pendingSshVpnParams = SshVpnParams(dnsServer, resolverType, resolverValue, resolverDisplayName, tunnelDomain, publicKey, sshUsername, sshPassword, sshPrivateKey)
             startActivityForResult(intent, VPN_REQUEST_CODE)
             return
         }
 
         // Permission granted, proceed with connection
-        startSshTunnelWithVpn(dnsServer, tunnelDomain, publicKey, sshUsername, sshPassword, sshPrivateKey, result)
+        startSshTunnelWithVpn(dnsServer, resolverType, resolverValue, resolverDisplayName, tunnelDomain, publicKey, sshUsername, sshPassword, sshPrivateKey, result)
     }
 
     private data class SshVpnParams(
         val dnsServer: String,
+        val resolverType: String,
+        val resolverValue: String,
+        val resolverDisplayName: String,
         val tunnelDomain: String,
         val publicKey: String,
         val sshUsername: String,
@@ -839,6 +892,9 @@ class MainActivity : FlutterActivity() {
 
     private fun startSshTunnelWithVpn(
         dnsServer: String,
+        resolverType: String,
+        resolverValue: String,
+        resolverDisplayName: String,
         tunnelDomain: String,
         publicKey: String,
         sshUsername: String,
@@ -857,7 +913,7 @@ class MainActivity : FlutterActivity() {
             try {
                 // Step 1: Start DNSTT proxy on internal port 7001
                 val listenAddr = "127.0.0.1:7001"
-                sshDnsttClient = Mobile.newClient(dnsServer, tunnelDomain, publicKey, listenAddr)
+                sshDnsttClient = createDnsttClient(resolverType, resolverValue, dnsServer, tunnelDomain, publicKey, listenAddr)
                 sshDnsttClient?.start()
                 Log.d("DnsttSsh", "DNSTT tunnel started on $listenAddr")
 
@@ -877,7 +933,7 @@ class MainActivity : FlutterActivity() {
 
                     // Step 3: Start VPN service to route traffic through SSH SOCKS5 proxy
                     runOnUiThread {
-                        startVpnServiceForSsh(dnsServer)
+                        startVpnServiceForSsh(dnsServer, resolverType, resolverValue, resolverDisplayName)
                         result.success(true)
                     }
                 } else {
@@ -910,12 +966,15 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startVpnServiceForSsh(dnsServer: String) {
+    private fun startVpnServiceForSsh(dnsServer: String, resolverType: String, resolverValue: String, resolverDisplayName: String) {
         val serviceIntent = Intent(this, DnsttVpnService::class.java).apply {
             action = DnsttVpnService.ACTION_CONNECT
             putExtra(DnsttVpnService.EXTRA_PROXY_HOST, "127.0.0.1")
             putExtra(DnsttVpnService.EXTRA_PROXY_PORT, SSH_VPN_SOCKS_PORT)
             putExtra(DnsttVpnService.EXTRA_DNS_SERVER, dnsServer)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_TYPE, resolverType)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_VALUE, resolverValue)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_DISPLAY_NAME, resolverDisplayName)
             putExtra(DnsttVpnService.EXTRA_TUNNEL_DOMAIN, "")
             putExtra(DnsttVpnService.EXTRA_PUBLIC_KEY, "")
             putExtra(DnsttVpnService.EXTRA_SSH_MODE, true)
@@ -935,6 +994,7 @@ class MainActivity : FlutterActivity() {
                     pendingSlipstreamVpnParams = null
                     startSlipstreamVpnService(
                         params.dnsServer,
+                        params.resolverDisplayName,
                         params.tunnelDomain,
                         params.congestionControl,
                         params.keepAliveInterval,
@@ -947,6 +1007,9 @@ class MainActivity : FlutterActivity() {
                     pendingSshVpnParams = null
                     startSshTunnelWithVpn(
                         params.dnsServer,
+                        params.resolverType,
+                        params.resolverValue,
+                        params.resolverDisplayName,
                         params.tunnelDomain,
                         params.publicKey,
                         params.sshUsername,
@@ -960,6 +1023,9 @@ class MainActivity : FlutterActivity() {
                         pendingProxyHost!!,
                         pendingProxyPort!!,
                         pendingDnsServer ?: "8.8.8.8",
+                        pendingResolverType ?: "udp",
+                        pendingResolverValue ?: (pendingDnsServer ?: "8.8.8.8"),
+                        pendingResolverDisplayName ?: (pendingDnsServer ?: "8.8.8.8"),
                         pendingTunnelDomain ?: "",
                         pendingPublicKey ?: ""
                     )
@@ -980,6 +1046,9 @@ class MainActivity : FlutterActivity() {
             pendingProxyHost = null
             pendingProxyPort = null
             pendingDnsServer = null
+            pendingResolverType = null
+            pendingResolverValue = null
+            pendingResolverDisplayName = null
             pendingTunnelDomain = null
             pendingPublicKey = null
         }
@@ -1005,6 +1074,21 @@ class MainActivity : FlutterActivity() {
             client.stop()
         } catch (e: Exception) {
             Log.e("DnsttTest", "Error stopping client: ${e.message}")
+        }
+    }
+
+    private fun createDnsttClient(
+        resolverType: String,
+        resolverValue: String,
+        dnsServer: String,
+        tunnelDomain: String,
+        publicKey: String,
+        listenAddr: String
+    ): mobile.DnsttClient {
+        return if (resolverType == "udp" || resolverType == "system") {
+            Mobile.newClient(dnsServer, tunnelDomain, publicKey, listenAddr)
+        } else {
+            Mobile.newClientWithResolver(resolverType, resolverValue, tunnelDomain, publicKey, listenAddr)
         }
     }
 
@@ -1041,6 +1125,8 @@ class MainActivity : FlutterActivity() {
 
     private fun testDnsServer(
         dnsServer: String,
+        resolverType: String,
+        resolverValue: String,
         tunnelDomain: String,
         publicKey: String,
         testUrl: String,
@@ -1081,7 +1167,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 // Create temporary client
-                dnsttClient = Mobile.newClient(dnsServer, tunnelDomain, publicKey, listenAddr)
+                dnsttClient = createDnsttClient(resolverType, resolverValue, dnsServer, tunnelDomain, publicKey, listenAddr)
                 Log.d("DnsttTest", "Client created")
 
                 // Update context with client

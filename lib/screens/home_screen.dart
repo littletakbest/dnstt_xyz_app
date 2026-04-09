@@ -420,8 +420,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icons.dns,
                 'DNS',
                 state.useAutoDns
-                    ? '${state.activeDns!.address} (Auto)'
-                    : state.activeDns!.address,
+                    ? '${state.activeDns!.displayAddress} (Local)'
+                    : state.activeDns!.displayName,
               )
             else
               _buildInfoItem(
@@ -599,9 +599,9 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
           icon: Icons.dns,
           title: 'DNS Servers',
-          subtitle: state.useAutoDns
-              ? 'Local DNS: ${state.activeDns?.address ?? 'detecting...'}'
-              : '${state.dnsServers.length} servers',
+          subtitle: state.activeDns != null
+              ? 'Selected: ${state.activeDns!.displayName}'
+              : '${state.visibleDnsServers.length} resolvers',
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const DnsManagementScreen()),
@@ -612,9 +612,7 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
           icon: Icons.settings,
           title: 'Settings',
-          subtitle: state.useAutoDns
-              ? 'Local DNS on | Port: ${state.proxyPort}'
-              : 'Proxy port: ${state.proxyPort}',
+          subtitle: 'Proxy port: ${state.proxyPort}',
           onTap: () => _showSettingsDialog(context, state),
           color: Colors.blueGrey,
         ),
@@ -704,38 +702,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: Colors.grey[600],
                 ),
               ),
-              const Divider(),
-              const SizedBox(height: 8),
-              const Text(
-                'DNS Detection',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Use Local DNS (Beta)'),
-                subtitle: state.useAutoDns
-                    ? Text(
-                        state.activeDns != null
-                            ? 'Detected: ${state.activeDns!.address}'
-                            : state.autoDnsError ?? 'Detecting...',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: state.activeDns != null
-                              ? Colors.green
-                              : Colors.orange,
-                        ),
-                      )
-                    : const Text(
-                        'Use system DNS from active network',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                value: state.useAutoDns,
-                onChanged: (value) async {
-                  await state.setUseAutoDns(value);
-                  setDialogState(() {});
-                },
-              ),
             ],
           ),
         ),
@@ -792,6 +758,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final isDesktop = VpnService.isDesktopPlatform;
     final isSshTunnel = state.activeConfig?.tunnelType == TunnelType.ssh;
     final isSlipstream = state.activeConfig?.isSlipstream ?? false;
+    final resolver = state.activeDns;
+    final resolverMessage = resolver != null ? state.getResolverSupportMessage(resolver) : null;
+    if (resolverMessage != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(resolverMessage), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
     final useProxyMode = isDesktop || (Platform.isAndroid && _connectionMode == ConnectionMode.proxy);
 
     // Determine connection type for permission and messages
@@ -857,7 +833,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // SSH tunnel in proxy mode - DNSTT + SSH, no VPN
       final config = state.activeConfig!;
       success = await _vpnService.connectSshTunnel(
-        dnsServer: state.activeDns?.address ?? '8.8.8.8',
+        resolver: resolver!,
         tunnelDomain: config.tunnelDomain,
         publicKey: config.publicKey,
         sshUsername: config.sshUsername!,
@@ -868,7 +844,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // SSH tunnel in VPN mode - DNSTT + SSH + VPN routing
       final config = state.activeConfig!;
       success = await _vpnService.connectSshTunnelVpn(
-        dnsServer: state.activeDns?.address ?? '8.8.8.8',
+        resolver: resolver!,
         tunnelDomain: config.tunnelDomain,
         publicKey: config.publicKey,
         sshUsername: config.sshUsername!,
@@ -879,7 +855,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Slipstream in proxy mode
       final config = state.activeConfig!;
       success = await _vpnService.connectSlipstreamProxy(
-        dnsServer: state.activeDns?.address ?? '8.8.8.8',
+        resolver: resolver!,
         tunnelDomain: config.tunnelDomain,
         proxyPort: state.proxyPort,
         congestionControl: config.congestionControl ?? 'dcubic',
@@ -890,7 +866,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Slipstream in VPN mode (Android)
       final config = state.activeConfig!;
       success = await _vpnService.connectSlipstream(
-        dnsServer: state.activeDns?.address ?? '8.8.8.8',
+        resolver: resolver!,
         tunnelDomain: config.tunnelDomain,
         congestionControl: config.congestionControl ?? 'dcubic',
         keepAliveInterval: config.keepAliveInterval ?? 400,
@@ -899,7 +875,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (useProxyMode) {
       // Proxy-only mode (desktop or Android proxy mode)
       success = await _vpnService.connectProxy(
-        dnsServer: state.activeDns?.address ?? '8.8.8.8',
+        resolver: resolver!,
         tunnelDomain: state.activeConfig?.tunnelDomain,
         publicKey: state.activeConfig?.publicKey,
         proxyPort: state.proxyPort,
@@ -909,7 +885,7 @@ class _HomeScreenState extends State<HomeScreen> {
       success = await _vpnService.connect(
         proxyHost: '127.0.0.1',
         proxyPort: state.proxyPort,
-        dnsServer: state.activeDns?.address ?? '8.8.8.8',
+        resolver: resolver!,
         tunnelDomain: state.activeConfig?.tunnelDomain,
         publicKey: state.activeConfig?.publicKey,
       );

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import '../models/dns_server.dart';
 import 'dnstt_ffi_service.dart';
 import 'slipstream_service.dart';
 import '../models/dnstt_config.dart';
@@ -150,7 +151,7 @@ class VpnService {
   Future<bool> connect({
     required String proxyHost,
     required int proxyPort,
-    String? dnsServer,
+    required DnsServer resolver,
     String? tunnelDomain,
     String? publicKey,
   }) async {
@@ -161,12 +162,12 @@ class VpnService {
     _isProxyMode = false;
     _isSshTunnelMode = false;
 
-    _connectedDns = dnsServer;
+    _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
 
     if (_isDesktop) {
       return _connectDesktop(
-        dnsServer: dnsServer ?? '8.8.8.8',
+        resolver: resolver,
         tunnelDomain: tunnelDomain ?? '',
         publicKey: publicKey ?? '',
       );
@@ -183,7 +184,7 @@ class VpnService {
     try {
       final params = Platform.isIOS
           ? {
-              'dnsServer': dnsServer ?? '8.8.8.8',
+              ..._resolverParams(resolver),
               'tunnelDomain': tunnelDomain ?? '',
               'publicKey': publicKey ?? '',
             }
@@ -191,7 +192,7 @@ class VpnService {
               // Android parameters - now includes tunnel config for dnstt-client
               'proxyHost': proxyHost,
               'proxyPort': proxyPort,
-              'dnsServer': dnsServer ?? '8.8.8.8',
+              ..._resolverParams(resolver),
               'tunnelDomain': tunnelDomain ?? '',
               'publicKey': publicKey ?? '',
             };
@@ -352,7 +353,7 @@ class VpnService {
 
   /// Connect on desktop using FFI
   Future<bool> _connectDesktop({
-    required String dnsServer,
+    required DnsServer resolver,
     required String tunnelDomain,
     required String publicKey,
   }) async {
@@ -376,7 +377,7 @@ class VpnService {
 
       // Create the client
       final created = ffi.createClient(
-        dnsServer: dnsServer,
+        resolver: resolver,
         tunnelDomain: tunnelDomain,
         publicKey: publicKey,
         listenAddr: socksProxyAddress,
@@ -427,7 +428,7 @@ class VpnService {
 
   /// Connect on desktop using Slipstream subprocess
   Future<bool> _connectDesktopSlipstream({
-    required String dnsServer,
+    required DnsServer resolver,
     required String tunnelDomain,
     String congestionControl = 'dcubic',
     int keepAliveInterval = 400,
@@ -443,7 +444,7 @@ class VpnService {
       final slipstream = SlipstreamService.instance;
       final started = await slipstream.startClient(
         domain: tunnelDomain,
-        dnsServerAddr: dnsServer,
+        dnsServerAddr: resolver.connectAddress,
         listenPort: proxyPort,
         congestionControl: congestionControl,
         keepAliveInterval: keepAliveInterval,
@@ -488,7 +489,7 @@ class VpnService {
 
   /// Connect using Slipstream transport (desktop or mobile)
   Future<bool> connectSlipstream({
-    required String dnsServer,
+    required DnsServer resolver,
     required String tunnelDomain,
     String congestionControl = 'dcubic',
     int keepAliveInterval = 400,
@@ -501,12 +502,12 @@ class VpnService {
     _isSshTunnelMode = false;
     _activeTransport = TransportType.slipstream;
 
-    _connectedDns = dnsServer;
+    _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
 
     if (_isDesktop) {
       return _connectDesktopSlipstream(
-        dnsServer: dnsServer,
+        resolver: resolver,
         tunnelDomain: tunnelDomain,
         congestionControl: congestionControl,
         keepAliveInterval: keepAliveInterval,
@@ -524,7 +525,7 @@ class VpnService {
 
     try {
       final result = await _channel.invokeMethod<bool>('connectSlipstream', {
-        'dnsServer': dnsServer,
+        ..._resolverParams(resolver),
         'tunnelDomain': tunnelDomain,
         'congestionControl': congestionControl,
         'keepAliveInterval': keepAliveInterval,
@@ -557,7 +558,7 @@ class VpnService {
 
   /// Connect Slipstream in proxy-only mode on Android
   Future<bool> connectSlipstreamProxy({
-    required String dnsServer,
+    required DnsServer resolver,
     required String tunnelDomain,
     int proxyPort = 1080,
     String congestionControl = 'dcubic',
@@ -566,7 +567,7 @@ class VpnService {
   }) async {
     if (_isDesktop) {
       return connectSlipstream(
-        dnsServer: dnsServer,
+        resolver: resolver,
         tunnelDomain: tunnelDomain,
         congestionControl: congestionControl,
         keepAliveInterval: keepAliveInterval,
@@ -581,7 +582,7 @@ class VpnService {
     _isProxyMode = true;
     _activeTransport = TransportType.slipstream;
 
-    _connectedDns = dnsServer;
+    _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
 
     if (!_platformSupported) {
@@ -593,7 +594,7 @@ class VpnService {
 
     try {
       final result = await _channel.invokeMethod<bool>('connectSlipstreamProxy', {
-        'dnsServer': dnsServer,
+        ..._resolverParams(resolver),
         'tunnelDomain': tunnelDomain,
         'proxyPort': proxyPort,
         'congestionControl': congestionControl,
@@ -702,7 +703,7 @@ class VpnService {
   /// Connect SSH tunnel on desktop using DNSTT FFI + system ssh command
   /// DNSTT creates TCP tunnel on internal port 7001, SSH creates SOCKS5 on configured proxy port
   Future<bool> _connectSshTunnelDesktop({
-    required String dnsServer,
+    required DnsServer resolver,
     required String tunnelDomain,
     required String publicKey,
     required String sshUsername,
@@ -715,7 +716,7 @@ class VpnService {
     _isProxyMode = false;
     _isSshTunnelMode = true;
 
-    _connectedDns = dnsServer;
+    _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
 
     try {
@@ -736,7 +737,7 @@ class VpnService {
 
       // Create the DNSTT client on internal port
       final created = ffi.createClient(
-        dnsServer: dnsServer,
+        resolver: resolver,
         tunnelDomain: tunnelDomain,
         publicKey: publicKey,
         listenAddr: '127.0.0.1:7001',
@@ -906,7 +907,7 @@ class VpnService {
 
   /// Connect in proxy-only mode on Android (no VPN, just SOCKS5 proxy)
   Future<bool> connectProxy({
-    String? dnsServer,
+    required DnsServer resolver,
     String? tunnelDomain,
     String? publicKey,
     int proxyPort = 1080,
@@ -916,7 +917,7 @@ class VpnService {
       return connect(
         proxyHost: '127.0.0.1',
         proxyPort: proxyPort,
-        dnsServer: dnsServer,
+        resolver: resolver,
         tunnelDomain: tunnelDomain,
         publicKey: publicKey,
       );
@@ -929,7 +930,7 @@ class VpnService {
     _isSshTunnelMode = false;
     _isProxyMode = true;
 
-    _connectedDns = dnsServer;
+    _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
 
     if (!_platformSupported) {
@@ -941,7 +942,7 @@ class VpnService {
 
     try {
       final result = await _channel.invokeMethod<bool>('connectProxy', {
-        'dnsServer': dnsServer ?? '8.8.8.8',
+        ..._resolverParams(resolver),
         'tunnelDomain': tunnelDomain ?? '',
         'publicKey': publicKey ?? '',
         'proxyPort': proxyPort,
@@ -1042,7 +1043,7 @@ class VpnService {
   /// Connect SSH tunnel over DNSTT
   /// Flow: DNSTT tunnel -> SSH client -> SSH dynamic port forwarding -> local SOCKS5 proxy on configured port
   Future<bool> connectSshTunnel({
-    String? dnsServer,
+    required DnsServer resolver,
     String? tunnelDomain,
     String? publicKey,
     required String sshUsername,
@@ -1051,7 +1052,7 @@ class VpnService {
   }) async {
     if (_isDesktop) {
       return _connectSshTunnelDesktop(
-        dnsServer: dnsServer ?? '8.8.8.8',
+        resolver: resolver,
         tunnelDomain: tunnelDomain ?? '',
         publicKey: publicKey ?? '',
         sshUsername: sshUsername,
@@ -1066,7 +1067,7 @@ class VpnService {
     _isProxyMode = false;
     _isSshTunnelMode = true;
 
-    _connectedDns = dnsServer;
+    _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
 
     if (!_platformSupported) {
@@ -1078,7 +1079,7 @@ class VpnService {
 
     try {
       final result = await _channel.invokeMethod<bool>('connectSshTunnel', {
-        'dnsServer': dnsServer ?? '8.8.8.8',
+        ..._resolverParams(resolver),
         'tunnelDomain': tunnelDomain ?? '',
         'publicKey': publicKey ?? '',
         'sshUsername': sshUsername,
@@ -1113,7 +1114,7 @@ class VpnService {
   /// Connect SSH tunnel with VPN mode (routes all device traffic through SSH tunnel)
   /// Android only - on desktop, use connectSshTunnel instead
   Future<bool> connectSshTunnelVpn({
-    String? dnsServer,
+    required DnsServer resolver,
     String? tunnelDomain,
     String? publicKey,
     required String sshUsername,
@@ -1123,7 +1124,7 @@ class VpnService {
     if (_isDesktop) {
       // Desktop doesn't have VPN mode, use regular SSH tunnel
       return connectSshTunnel(
-        dnsServer: dnsServer,
+        resolver: resolver,
         tunnelDomain: tunnelDomain,
         publicKey: publicKey,
         sshUsername: sshUsername,
@@ -1139,7 +1140,7 @@ class VpnService {
     _isProxyMode = false;
     _isSshTunnelMode = true;
 
-    _connectedDns = dnsServer;
+    _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
 
     if (!_platformSupported) {
@@ -1151,7 +1152,7 @@ class VpnService {
 
     try {
       final result = await _channel.invokeMethod<bool>('connectSshTunnelVpn', {
-        'dnsServer': dnsServer ?? '8.8.8.8',
+        ..._resolverParams(resolver),
         'tunnelDomain': tunnelDomain ?? '',
         'publicKey': publicKey ?? '',
         'sshUsername': sshUsername,
@@ -1278,7 +1279,7 @@ class VpnService {
   /// Test a DNS server by making an actual connection through the tunnel
   /// Returns latency in milliseconds on success, -1 on failure, -2 on cancelled
   Future<int> testDnsServer({
-    required String dnsServer,
+    required DnsServer resolver,
     required String tunnelDomain,
     required String publicKey,
     String testUrl = 'https://api.ipify.org?format=json',
@@ -1292,7 +1293,7 @@ class VpnService {
           ffi.load();
         }
         return ffi.testDnsServer(
-          dnsServer: dnsServer,
+          resolver: resolver,
           tunnelDomain: tunnelDomain,
           publicKey: publicKey,
           testUrl: testUrl,
@@ -1311,7 +1312,7 @@ class VpnService {
 
     try {
       final result = await _channel.invokeMethod<int>('testDnsServer', {
-        'dnsServer': dnsServer,
+        ..._resolverParams(resolver),
         'tunnelDomain': tunnelDomain,
         'publicKey': publicKey,
         'testUrl': testUrl,
@@ -1329,7 +1330,7 @@ class VpnService {
   /// Test a DNS server using Slipstream transport
   /// Returns latency in milliseconds on success, -1 on failure
   Future<int> testSlipstreamDnsServer({
-    required String dnsServer,
+    required DnsServer resolver,
     required String tunnelDomain,
     String testUrl = 'https://api.ipify.org?format=json',
     int timeoutMs = 15000,
@@ -1342,7 +1343,7 @@ class VpnService {
       try {
         return await SlipstreamService.instance.testServer(
           domain: tunnelDomain,
-          dnsServerAddr: dnsServer,
+          dnsServerAddr: resolver.connectAddress,
           testUrl: testUrl,
           timeoutMs: timeoutMs,
           congestionControl: congestionControl,
@@ -1360,7 +1361,7 @@ class VpnService {
 
     try {
       final result = await _channel.invokeMethod<int>('testSlipstreamDnsServer', {
-        'dnsServer': dnsServer,
+        ..._resolverParams(resolver),
         'tunnelDomain': tunnelDomain,
         'testUrl': testUrl,
         'timeoutMs': timeoutMs,
@@ -1425,5 +1426,14 @@ class VpnService {
       } catch (_) {}
     }
     _stateController.close();
+  }
+
+  Map<String, dynamic> _resolverParams(DnsServer resolver) {
+    return {
+      'dnsServer': resolver.connectAddress,
+      'resolverType': resolver.resolverType.wireName,
+      'resolverValue': resolver.resolverValue,
+      'resolverDisplayName': resolver.displayName,
+    };
   }
 }

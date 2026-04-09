@@ -57,7 +57,8 @@ type DnsttClient struct {
 	cancel        context.CancelFunc
 	pubKey        []byte
 	domain        string
-	dnsAddr       string
+	resolverType  string
+	resolverValue string
 	listenAddr    string
 	sess          *smux.Session
 	tunFd         int
@@ -67,17 +68,23 @@ type DnsttClient struct {
 
 // NewClient creates a new dnstt client
 func NewClient(dnsServer, tunnelDomain, pubKeyHex, listenAddr string) (*DnsttClient, error) {
+	return NewClientWithResolver("udp", dnsServer, tunnelDomain, pubKeyHex, listenAddr)
+}
+
+// NewClientWithResolver creates a client with an explicit resolver transport.
+func NewClientWithResolver(resolverType, resolverValue, tunnelDomain, pubKeyHex, listenAddr string) (*DnsttClient, error) {
 	pubKey, err := noise.DecodeKey(pubKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("invalid public key: %v", err)
 	}
 
 	return &DnsttClient{
-		pubKey:     pubKey,
-		domain:     tunnelDomain,
-		dnsAddr:    dnsServer,
-		listenAddr: listenAddr,
-		tunFd:      -1,
+		pubKey:        pubKey,
+		domain:        tunnelDomain,
+		resolverType:  strings.ToLower(strings.TrimSpace(resolverType)),
+		resolverValue: strings.TrimSpace(resolverValue),
+		listenAddr:    listenAddr,
+		tunFd:         -1,
 	}, nil
 }
 
@@ -122,29 +129,13 @@ func (c *DnsttClient) Start() error {
 		return fmt.Errorf("invalid domain: %v", err)
 	}
 
-	// Resolve DNS server address
-	dnsAddr := c.dnsAddr
-	if _, _, err := net.SplitHostPort(dnsAddr); err != nil {
-		dnsAddr = net.JoinHostPort(dnsAddr, "53")
-	}
-
-	remoteAddr, err := net.ResolveUDPAddr("udp", dnsAddr)
+	transportConn, remoteAddr, err := c.createTransport()
 	if err != nil {
-		return fmt.Errorf("failed to resolve DNS server: %v", err)
+		return err
 	}
 
-	// Create UDP connection - bind to 0.0.0.0 (IPv4 only) to avoid IPv6 routing issues
-	localAddr := &net.UDPAddr{
-		IP:   net.IPv4zero,
-		Port: 0,
-	}
-	pconn, err := net.ListenUDP("udp4", localAddr)
-	if err != nil {
-		return fmt.Errorf("failed to create UDP socket: %v", err)
-	}
-
-	// Protect the socket from VPN routing if callback is set
-	if c.protectSocket != nil {
+	pconn, protectable := transportConn.(*net.UDPConn)
+	if protectable && c.protectSocket != nil {
 		// Get the file descriptor from the UDP connection
 		rawConn, err := pconn.SyscallConn()
 		if err != nil {
@@ -170,7 +161,7 @@ func (c *DnsttClient) Start() error {
 		}
 	}
 
-	c.conn = pconn
+	c.conn = transportConn
 
 	// Create context
 	c.ctx, c.cancel = context.WithCancel(context.Background())
@@ -178,18 +169,18 @@ func (c *DnsttClient) Start() error {
 	// Calculate MTU
 	mtu := dnsNameCapacity(domain) - 8 - 1 - numPadding - 1
 	if mtu < 80 {
-		pconn.Close()
-		return fmt.Errorf("domain %s leaves only %d bytes for payload", domain, mtu)
+			transportConn.Close()
+			return fmt.Errorf("domain %s leaves only %d bytes for payload", domain, mtu)
 	}
 	log.Printf("effective MTU %d", mtu)
 
 	// Wrap in DNSPacketConn
-	dnsConn := newDNSPacketConn(pconn, remoteAddr, domain)
+	dnsConn := newDNSPacketConn(transportConn, remoteAddr, domain)
 
 	// Open KCP connection
 	kcpConn, err := kcp.NewConn2(remoteAddr, nil, 0, 0, dnsConn)
 	if err != nil {
-		pconn.Close()
+		transportConn.Close()
 		return fmt.Errorf("opening KCP conn: %v", err)
 	}
 
@@ -199,7 +190,7 @@ func (c *DnsttClient) Start() error {
 	kcpConn.SetWindowSize(turbotunnel.QueueSize/2, turbotunnel.QueueSize/2)
 	if !kcpConn.SetMtu(mtu) {
 		kcpConn.Close()
-		pconn.Close()
+		transportConn.Close()
 		return fmt.Errorf("failed to set MTU")
 	}
 
@@ -219,13 +210,13 @@ func (c *DnsttClient) Start() error {
 	case result := <-noiseResultChan:
 		if result.err != nil {
 			kcpConn.Close()
-			pconn.Close()
+			transportConn.Close()
 			return fmt.Errorf("failed to create noise session: %v", result.err)
 		}
 		noiseConn = result.conn
 	case <-time.After(handshakeTimeout):
 		kcpConn.Close()
-		pconn.Close()
+		transportConn.Close()
 		return fmt.Errorf("connection timeout: DNS server not responding")
 	}
 
@@ -237,7 +228,7 @@ func (c *DnsttClient) Start() error {
 	sess, err := smux.Client(noiseConn, smuxConfig)
 	if err != nil {
 		noiseConn.Close()
-		pconn.Close()
+		transportConn.Close()
 		return fmt.Errorf("opening smux session: %v", err)
 	}
 	c.sess = sess
@@ -257,7 +248,7 @@ func (c *DnsttClient) Start() error {
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		sess.Close()
-		pconn.Close()
+		transportConn.Close()
 		return fmt.Errorf("failed to start listener: %v", err)
 	}
 	c.listener = listener
@@ -268,6 +259,45 @@ func (c *DnsttClient) Start() error {
 	c.running = true
 	log.Printf("dnstt client started, listening on %s", c.listenAddr)
 	return nil
+}
+
+func (c *DnsttClient) createTransport() (net.PacketConn, net.Addr, error) {
+	switch c.resolverType {
+	case "", "udp", "system":
+		dnsAddr := c.resolverValue
+		if _, _, err := net.SplitHostPort(dnsAddr); err != nil {
+			dnsAddr = net.JoinHostPort(dnsAddr, "53")
+		}
+
+		remoteAddr, err := net.ResolveUDPAddr("udp", dnsAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to resolve DNS server: %v", err)
+		}
+
+		localAddr := &net.UDPAddr{
+			IP:   net.IPv4zero,
+			Port: 0,
+		}
+		pconn, err := net.ListenUDP("udp4", localAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create UDP socket: %v", err)
+		}
+		return pconn, remoteAddr, nil
+	case "doh":
+		pconn, err := NewHTTPPacketConn(c.resolverValue, 16)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create DoH transport: %v", err)
+		}
+		return pconn, turbotunnel.DummyAddr{}, nil
+	case "dot":
+		pconn, err := NewTLSPacketConn(c.resolverValue)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create DoT transport: %v", err)
+		}
+		return pconn, turbotunnel.DummyAddr{}, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported resolver type: %s", c.resolverType)
+	}
 }
 
 // Stop stops the client

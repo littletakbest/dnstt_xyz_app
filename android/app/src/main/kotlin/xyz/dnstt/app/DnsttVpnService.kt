@@ -38,6 +38,9 @@ class DnsttVpnService : VpnService() {
         const val EXTRA_PROXY_HOST = "proxy_host"
         const val EXTRA_PROXY_PORT = "proxy_port"
         const val EXTRA_DNS_SERVER = "dns_server"
+        const val EXTRA_RESOLVER_TYPE = "resolver_type"
+        const val EXTRA_RESOLVER_VALUE = "resolver_value"
+        const val EXTRA_RESOLVER_DISPLAY_NAME = "resolver_display_name"
         const val EXTRA_TUNNEL_DOMAIN = "tunnel_domain"
         const val EXTRA_PUBLIC_KEY = "public_key"
         const val EXTRA_SSH_MODE = "ssh_mode"
@@ -56,6 +59,9 @@ class DnsttVpnService : VpnService() {
     private var proxyHost: String = "127.0.0.1"
     private var proxyPort: Int = 7000
     private var dnsServer: String = "8.8.8.8"
+    private var resolverType: String = "udp"
+    private var resolverValue: String = "8.8.8.8"
+    private var resolverDisplayName: String = "8.8.8.8"
     private var tunnelDomain: String = ""
     private var publicKey: String = ""
     private var isSshMode: Boolean = false
@@ -96,6 +102,9 @@ class DnsttVpnService : VpnService() {
                 proxyHost = intent.getStringExtra(EXTRA_PROXY_HOST) ?: "127.0.0.1"
                 proxyPort = intent.getIntExtra(EXTRA_PROXY_PORT, 7000)
                 dnsServer = intent.getStringExtra(EXTRA_DNS_SERVER) ?: "8.8.8.8"
+                resolverType = intent.getStringExtra(EXTRA_RESOLVER_TYPE) ?: "udp"
+                resolverValue = intent.getStringExtra(EXTRA_RESOLVER_VALUE) ?: dnsServer
+                resolverDisplayName = intent.getStringExtra(EXTRA_RESOLVER_DISPLAY_NAME) ?: dnsServer
                 tunnelDomain = intent.getStringExtra(EXTRA_TUNNEL_DOMAIN) ?: ""
                 publicKey = intent.getStringExtra(EXTRA_PUBLIC_KEY) ?: ""
                 isSshMode = intent.getBooleanExtra(EXTRA_SSH_MODE, false)
@@ -138,12 +147,12 @@ class DnsttVpnService : VpnService() {
             }
 
             Log.d(TAG, "Starting Go-based DNSTT client")
-            Log.d(TAG, "DNS Server: $dnsServer, Domain: $tunnelDomain")
+            Log.d(TAG, "DNS Resolver: $resolverDisplayName ($resolverType), Domain: $tunnelDomain")
             Log.d(TAG, "Listen address: $proxyHost:$proxyPort")
 
             // Create the Go dnstt client
             val listenAddr = "$proxyHost:$proxyPort"
-            dnsttClient = Mobile.newClient(dnsServer, tunnelDomain, publicKey, listenAddr)
+            dnsttClient = createDnsttClient(listenAddr)
 
             // Start the client (this may block while establishing connection)
             dnsttClient?.start()
@@ -328,7 +337,7 @@ class DnsttVpnService : VpnService() {
             }
 
             Log.d(TAG, "Starting Slipstream client")
-            Log.d(TAG, "DNS Server (resolver): $dnsServer, Domain: $tunnelDomain")
+            Log.d(TAG, "DNS Server (resolver): $resolverDisplayName, Domain: $tunnelDomain")
             Log.d(TAG, "Listen address: $proxyHost:$proxyPort")
 
             slipstreamBridge = SlipstreamBridge()
@@ -854,12 +863,12 @@ class DnsttVpnService : VpnService() {
         val (title, text, icon) = when (state) {
             "connecting" -> Triple(
                 "$protocolName VPN Connecting...",
-                "Establishing tunnel via $dnsServer",
+                "Establishing tunnel via $resolverDisplayName",
                 android.R.drawable.ic_popup_sync
             )
             "connected" -> Triple(
                 "$protocolName VPN Connected",
-                "Tunneling via $dnsServer",
+                "Tunneling via $resolverDisplayName",
                 android.R.drawable.ic_lock_lock
             )
             "disconnecting" -> Triple(
@@ -934,6 +943,14 @@ class DnsttVpnService : VpnService() {
     override fun onRevoke() {
         disconnect()
         super.onRevoke()
+    }
+
+    private fun createDnsttClient(listenAddr: String): mobile.DnsttClient {
+        return if (resolverType == "udp" || resolverType == "system") {
+            Mobile.newClient(dnsServer, tunnelDomain, publicKey, listenAddr)
+        } else {
+            Mobile.newClientWithResolver(resolverType, resolverValue, tunnelDomain, publicKey, listenAddr)
+        }
     }
 }
 

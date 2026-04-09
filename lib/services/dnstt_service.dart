@@ -279,7 +279,7 @@ class DnsttService {
       try {
         final result = await SlipstreamService.instance.testServer(
           domain: tunnelDomain,
-          dnsServerAddr: server.address,
+          dnsServerAddr: server.connectAddress,
           testUrl: testUrl,
           timeoutMs: timeout.inMilliseconds,
           congestionControl: congestionControl,
@@ -316,7 +316,7 @@ class DnsttService {
       await vpnService.init();
 
       final result = await vpnService.testSlipstreamDnsServer(
-        dnsServer: server.address,
+        resolver: server,
         tunnelDomain: tunnelDomain,
         testUrl: testUrl,
         timeoutMs: timeout.inMilliseconds,
@@ -380,7 +380,7 @@ class DnsttService {
       await vpnService.init();
 
       final result = await vpnService.testDnsServer(
-        dnsServer: server.address,
+        resolver: server,
         tunnelDomain: tunnelDomain,
         publicKey: publicKey,
         testUrl: testUrl,
@@ -432,6 +432,8 @@ class DnsttService {
       // Use compute to run in a separate isolate
       final result = await compute(_runFfiTest, {
         'dnsServer': server.address,
+        'resolverType': server.resolverType.wireName,
+        'resolverValue': server.resolverValue,
         'tunnelDomain': tunnelDomain,
         'publicKey': publicKey,
         'testUrl': testUrl,
@@ -474,8 +476,8 @@ class DnsttService {
       // Create UDP socket
       socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
 
-      final serverAddress = InternetAddress.tryParse(server.address);
-      if (serverAddress == null) {
+      final udpAddress = InternetAddress.tryParse(server.connectAddress);
+      if (udpAddress == null) {
         stopwatch.stop();
         return DnsttTestResult(
           server: server,
@@ -493,7 +495,7 @@ class DnsttService {
         query = _buildSimpleDnsQuery();
       }
 
-      socket.send(query, serverAddress, 53);
+      socket.send(query, udpAddress, 53);
 
       // Wait for response with timeout
       final completer = Completer<DnsttTestResult>();
@@ -758,7 +760,14 @@ class DnsttService {
 /// Top-level function to run FFI test in a separate isolate
 /// This must be a top-level function for compute() to work
 int _runFfiTest(Map<String, dynamic> params) {
-  final dnsServer = params['dnsServer'] as String;
+  final resolver = DnsServer(
+    id: 'ffi-test-${params['resolverType']}',
+    address: params['resolverValue'] as String,
+    bootstrapAddress: params['dnsServer'] as String,
+    resolverType: DnsResolverTypeWire.fromWireName(
+      params['resolverType'] as String?,
+    ),
+  );
   final tunnelDomain = params['tunnelDomain'] as String;
   final publicKey = params['publicKey'] as String;
   final testUrl = params['testUrl'] as String;
@@ -773,7 +782,7 @@ int _runFfiTest(Map<String, dynamic> params) {
 
     // Run the test
     return ffi.testDnsServer(
-      dnsServer: dnsServer,
+      resolver: resolver,
       tunnelDomain: tunnelDomain,
       publicKey: publicKey,
       testUrl: testUrl,

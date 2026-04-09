@@ -226,7 +226,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             const Divider(),
             _buildInfoTile('Config', state.activeConfig!.name),
             _buildInfoTile('Domain', state.activeConfig!.tunnelDomain),
-            _buildInfoTile('DNS Server', state.activeDns!.address),
+            _buildInfoTile('DNS Server', state.activeDns!.displayName),
           ],
         ),
       ),
@@ -374,7 +374,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     final success = await _vpnService.connect(
       proxyHost: '127.0.0.1',
       proxyPort: state.proxyPort,
-      dnsServer: state.activeDns!.address,
+      resolver: state.activeDns!,
       tunnelDomain: state.activeConfig!.tunnelDomain,
       publicKey: state.activeConfig!.publicKey,
     );
