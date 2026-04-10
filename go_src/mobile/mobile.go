@@ -39,6 +39,10 @@ const (
 	maxPollDelay        = 10 * time.Second
 	pollDelayMultiplier = 2.0
 	pollLimit           = 16
+
+	// Advertise a conservative EDNS UDP size to reduce fragmentation risk on
+	// mobile and public resolver paths.
+	advertisedEDNSPayloadSize = 1232
 )
 
 // base32Encoding is a base32 encoding without padding.
@@ -169,8 +173,8 @@ func (c *DnsttClient) Start() error {
 	// Calculate MTU
 	mtu := dnsNameCapacity(domain) - 8 - 1 - numPadding - 1
 	if mtu < 80 {
-			transportConn.Close()
-			return fmt.Errorf("domain %s leaves only %d bytes for payload", domain, mtu)
+		transportConn.Close()
+		return fmt.Errorf("domain %s leaves only %d bytes for payload", domain, mtu)
 	}
 	log.Printf("effective MTU %d", mtu)
 
@@ -264,6 +268,8 @@ func (c *DnsttClient) Start() error {
 func (c *DnsttClient) createTransport() (net.PacketConn, net.Addr, error) {
 	switch c.resolverType {
 	case "", "udp", "system":
+		// "system" currently means "use the detected local resolver address as a
+		// UDP target", not "delegate to the platform's native DNS stack".
 		dnsAddr := c.resolverValue
 		if _, _, err := net.SplitHostPort(dnsAddr); err != nil {
 			dnsAddr = net.JoinHostPort(dnsAddr, "53")
@@ -605,7 +611,7 @@ func (c *dnsPacketConn) send(transport net.PacketConn, p []byte, addr net.Addr) 
 			{
 				Name:  dns.Name{},
 				Type:  dns.RRTypeOPT,
-				Class: 4096,
+				Class: advertisedEDNSPayloadSize,
 				TTL:   0,
 				Data:  []byte{},
 			},

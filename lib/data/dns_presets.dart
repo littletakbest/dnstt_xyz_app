@@ -29,8 +29,8 @@ class _PresetFactory {
   DnsServer localPlaceholder() => DnsServer(
     id: DnsServer.localDnsId,
     address: '',
-    name: 'Local DNS',
-    provider: 'System',
+    name: 'Detected Local Resolver',
+    provider: 'System network',
     group: 'local',
     isPreset: true,
     resolverType: DnsResolverType.system,

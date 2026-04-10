@@ -27,7 +27,10 @@ import java.nio.ByteBuffer
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.Semaphore
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -110,6 +113,19 @@ class DnsttVpnService : VpnService() {
 
     // Thread pool for async SYN processing (slipstream SOCKS5 handshake goes through tunnel)
     private var synExecutor = Executors.newFixedThreadPool(16)
+
+    // Bound DNS forwarding work so bursts do not spawn an unbounded number of threads.
+    private var dnsExecutor = ThreadPoolExecutor(
+        2,
+        4,
+        30L,
+        TimeUnit.SECONDS,
+        LinkedBlockingQueue(64)
+    ) { runnable ->
+        Thread(runnable, "dnstt-dns-forwarder").apply { isDaemon = true }
+    }.apply {
+        rejectedExecutionHandler = ThreadPoolExecutor.AbortPolicy()
+    }
 
     // Semaphore to limit concurrent SOCKS5 handshakes through the tunnel
     // DNS tunnels have very limited bandwidth - too many concurrent handshakes will stall the tunnel
@@ -247,8 +263,8 @@ class DnsttVpnService : VpnService() {
 
             // Read server response (should be 0x05, 0x00 for no auth)
             val authResponse = ByteArray(2)
-            val authRead = input.read(authResponse)
-            if (authRead != 2 || authResponse[0] != 0x05.toByte() || authResponse[1] != 0x00.toByte()) {
+            readFully(input, authResponse)
+            if (authResponse[0] != 0x05.toByte() || authResponse[1] != 0x00.toByte()) {
                 Log.w(TAG, "SOCKS5 auth failed: ${authResponse.contentToString()}")
                 socket.close()
                 return false
@@ -271,14 +287,8 @@ class DnsttVpnService : VpnService() {
             output.flush()
 
             // Read SOCKS5 connect response
-            val connectResponse = ByteArray(10)
-            val responseRead = input.read(connectResponse, 0, 4) // Read first 4 bytes
-            if (responseRead < 4) {
-                Log.w(TAG, "SOCKS5 connect response too short")
-                socket.close()
-                return false
-            }
-
+            val connectResponse = ByteArray(4)
+            readFully(input, connectResponse)
             if (connectResponse[1] != 0x00.toByte()) {
                 Log.w(TAG, "SOCKS5 connect failed with code: ${connectResponse[1]}")
                 socket.close()
@@ -287,12 +297,17 @@ class DnsttVpnService : VpnService() {
 
             // Read remaining response based on address type
             when (connectResponse[3]) {
-                0x01.toByte() -> input.read(ByteArray(6)) // IPv4 + port
+                0x01.toByte() -> readFully(input, 6) // IPv4 + port
                 0x03.toByte() -> {
-                    val domainLen = input.read()
-                    input.read(ByteArray(domainLen + 2)) // domain + port
+                    val domainLen = readUnsignedByte(input)
+                    readFully(input, domainLen + 2) // domain + port
                 }
-                0x04.toByte() -> input.read(ByteArray(18)) // IPv6 + port
+                0x04.toByte() -> readFully(input, 18) // IPv6 + port
+                else -> {
+                    Log.w(TAG, "SOCKS5 connect returned unknown address type: ${connectResponse[3]}")
+                    socket.close()
+                    return false
+                }
             }
 
             // Send HTTP request
@@ -455,7 +470,7 @@ class DnsttVpnService : VpnService() {
                 .setSession("DNSTT Tunnel")
                 .addAddress(VPN_TUN_ADDRESS, 32)
                 .addRoute("0.0.0.0", 0)
-                .addDnsServer(if (strictDnsMode) VPN_DNS_ADDRESS else dnsServer)
+                .addDnsServer(if (strictDnsMode) VPN_DNS_ADDRESS else appDnsServer)
                 .setMtu(1500)
                 .setBlocking(true)
 
@@ -725,13 +740,14 @@ class DnsttVpnService : VpnService() {
         Log.d(TAG, "DNS query from ${ipHeader.sourceIp}:${udpHeader.sourcePort} to ${ipHeader.destinationIp}:53")
 
         // Forward DNS query according to the selected VPN DNS mode
-        Thread {
+        try {
+            dnsExecutor.execute {
             try {
                 val responseData = if (strictDnsMode) {
                     resolveDnsQueryThroughTunnel(udpHeader.payload)
                 } else {
                     resolveDnsQueryDirect(udpHeader.payload)
-                } ?: return@Thread
+                } ?: return@execute
 
                 Log.d(TAG, "DNS response received: ${responseData.size} bytes")
 
@@ -769,25 +785,32 @@ class DnsttVpnService : VpnService() {
             } catch (e: Exception) {
                 Log.e(TAG, "DNS forwarding failed", e)
             }
-        }.start()
+            }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            Log.w(TAG, "DNS forwarding queue full, dropping query for ${ipHeader.destinationIp}:53")
+        }
     }
 
     private fun resolveDnsQueryDirect(query: ByteArray): ByteArray? {
-        val dnsSocket = DatagramSocket()
-        return try {
-            protect(dnsSocket)
+        val normalizedType = appResolverType.lowercase()
+        val target = when (normalizedType) {
+            "doh", "dot" -> appResolverValue
+            else -> formatEndpoint(resolveDirectEndpoint(53))
+        }
+        Log.d(
+            TAG,
+            "Direct DNS query via app resolver mode=${if (strictDnsMode) "strict" else "non-strict"} " +
+                "type=$normalizedType target=$target"
+        )
 
-            val dnsServerAddr = InetAddress.getByName(dnsServer)
-            val queryPacket = DatagramPacket(query, query.size, dnsServerAddr, 53)
-            dnsSocket.soTimeout = 5000
-            dnsSocket.send(queryPacket)
-
-            val responseBuffer = ByteArray(4096)
-            val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
-            dnsSocket.receive(responsePacket)
-            responseBuffer.copyOf(responsePacket.length)
-        } finally {
-            dnsSocket.close()
+        return when (normalizedType) {
+            "udp", "system" -> queryDirectUdpWithFallback(query)
+            "dot" -> queryDirectDnsOverTls(query)
+            "doh" -> queryDirectDnsOverHttps(query)
+            else -> {
+                Log.w(TAG, "Unsupported direct resolver type=$normalizedType, falling back to tunneled DNS handling")
+                resolveDnsQueryThroughTunnel(query)
+            }
         }
     }
 
@@ -872,6 +895,159 @@ class DnsttVpnService : VpnService() {
         }
     }
 
+    private fun queryDirectUdpWithFallback(query: ByteArray): ByteArray? {
+        val endpoint = resolveDirectEndpoint(53)
+
+        repeat(2) { attempt ->
+            val response = queryDirectUdpOnce(query, endpoint.first, endpoint.second, attempt + 1)
+            if (response != null) {
+                if (isTruncatedDnsResponse(response)) {
+                    Log.w(TAG, "Direct UDP DNS response truncated from ${formatEndpoint(endpoint)}, retrying over TCP")
+                    return queryDirectDnsOverTcp(query)
+                }
+                return response
+            }
+
+            if (attempt == 0) {
+                Thread.sleep(200)
+            }
+        }
+
+        Log.w(TAG, "Direct UDP DNS failed for ${formatEndpoint(endpoint)}, falling back to TCP")
+        return queryDirectDnsOverTcp(query)
+    }
+
+    private fun queryDirectUdpOnce(
+        query: ByteArray,
+        host: String,
+        port: Int,
+        attempt: Int
+    ): ByteArray? {
+        val dnsSocket = DatagramSocket()
+        return try {
+            if (!protect(dnsSocket)) {
+                Log.e(TAG, "Direct DNS protect() failed for ${formatEndpoint(host, port)}")
+                return null
+            }
+
+            val dnsServerAddr = InetAddress.getByName(host)
+            val queryPacket = DatagramPacket(query, query.size, dnsServerAddr, port)
+            dnsSocket.soTimeout = 2500
+            dnsSocket.send(queryPacket)
+
+            val responseBuffer = ByteArray(4096)
+            val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
+            dnsSocket.receive(responsePacket)
+
+            if (responsePacket.port != port || responsePacket.address != dnsServerAddr) {
+                Log.w(
+                    TAG,
+                    "Ignoring unexpected UDP DNS response from ${responsePacket.address.hostAddress}:${responsePacket.port} " +
+                        "while waiting for ${formatEndpoint(host, port)} on attempt $attempt"
+                )
+                return null
+            }
+
+            responseBuffer.copyOf(responsePacket.length)
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.w(TAG, "Direct UDP DNS timeout for ${formatEndpoint(host, port)} on attempt $attempt")
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "Direct UDP DNS error for ${formatEndpoint(host, port)} on attempt $attempt: ${e.message}")
+            null
+        } finally {
+            dnsSocket.close()
+        }
+    }
+
+    private fun queryDirectDnsOverTcp(query: ByteArray): ByteArray? {
+        val endpoint = resolveDirectEndpoint(53)
+        val socket = Socket()
+        try {
+            if (!protect(socket)) {
+                Log.e(TAG, "Direct DNS protect() failed for TCP ${formatEndpoint(endpoint)}")
+                return null
+            }
+
+            socket.connect(InetSocketAddress.createUnresolved(endpoint.first, endpoint.second), 5000)
+            socket.soTimeout = 10000
+            socket.tcpNoDelay = true
+
+            val output = socket.getOutputStream()
+            output.write((query.size shr 8) and 0xFF)
+            output.write(query.size and 0xFF)
+            output.write(query)
+            output.flush()
+
+            val input = socket.getInputStream()
+            val responseLength = readUnsignedShort(input)
+            return readFully(input, responseLength)
+        } finally {
+            socket.close()
+        }
+    }
+
+    private fun queryDirectDnsOverTls(query: ByteArray): ByteArray? {
+        val endpoint = parseResolverEndpoint(appResolverValue, 853)
+        val rawSocket = Socket()
+        try {
+            if (!protect(rawSocket)) {
+                Log.e(TAG, "Direct DNS protect() failed for DoT ${formatEndpoint(endpoint)}")
+                return null
+            }
+
+            rawSocket.connect(InetSocketAddress.createUnresolved(endpoint.first, endpoint.second), 5000)
+            rawSocket.soTimeout = 10000
+            rawSocket.tcpNoDelay = true
+
+            val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            val sslSocket = sslFactory.createSocket(
+                rawSocket,
+                endpoint.first,
+                endpoint.second,
+                true
+            ) as SSLSocket
+            sslSocket.soTimeout = 10000
+            sslSocket.startHandshake()
+
+            val output = sslSocket.getOutputStream()
+            output.write((query.size shr 8) and 0xFF)
+            output.write(query.size and 0xFF)
+            output.write(query)
+            output.flush()
+
+            val input = sslSocket.getInputStream()
+            val responseLength = readUnsignedShort(input)
+            return readFully(input, responseLength)
+        } finally {
+            rawSocket.close()
+        }
+    }
+
+    private fun queryDirectDnsOverHttps(query: ByteArray): ByteArray? {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .build()
+
+        val body = query.toRequestBody("application/dns-message".toMediaType())
+        val request = Request.Builder()
+            .url(appResolverValue)
+            .header("Accept", "application/dns-message")
+            .header("Content-Type", "application/dns-message")
+            .post(body)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.w(TAG, "Direct DoH DNS query failed with HTTP ${response.code}")
+                return null
+            }
+            return response.body?.bytes()
+        }
+    }
+
     private fun openSocksSocket(host: String, port: Int): Socket {
         val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(proxyHost, proxyPort))
         val socket = Socket(proxy)
@@ -892,6 +1068,24 @@ class DnsttVpnService : VpnService() {
         return Pair(host, port)
     }
 
+    private fun resolveDirectEndpoint(defaultPort: Int): Pair<String, Int> {
+        val candidate = appResolverValue.trim()
+        val directValue = if (candidate.startsWith("https://") || candidate.startsWith("http://")) {
+            appDnsServer
+        } else {
+            candidate.ifEmpty { appDnsServer }
+        }
+        return parseResolverEndpoint(directValue, defaultPort)
+    }
+
+    private fun formatEndpoint(endpoint: Pair<String, Int>): String =
+        formatEndpoint(endpoint.first, endpoint.second)
+
+    private fun formatEndpoint(host: String, port: Int): String = "$host:$port"
+
+    private fun isTruncatedDnsResponse(data: ByteArray): Boolean =
+        data.size > 2 && (data[2].toInt() and 0x02) != 0
+
     private fun readUnsignedShort(input: java.io.InputStream): Int {
         val high = input.read()
         val low = input.read()
@@ -901,16 +1095,28 @@ class DnsttVpnService : VpnService() {
         return (high shl 8) or low
     }
 
-    private fun readFully(input: java.io.InputStream, length: Int): ByteArray {
-        val buffer = ByteArray(length)
+    private fun readUnsignedByte(input: java.io.InputStream): Int {
+        val value = input.read()
+        if (value == -1) {
+            throw EOFException("Unexpected EOF reading byte")
+        }
+        return value
+    }
+
+    private fun readFully(input: java.io.InputStream, buffer: ByteArray) {
         var offset = 0
-        while (offset < length) {
-            val count = input.read(buffer, offset, length - offset)
+        while (offset < buffer.size) {
+            val count = input.read(buffer, offset, buffer.size - offset)
             if (count == -1) {
-                throw EOFException("Unexpected EOF reading DNS response")
+                throw EOFException("Unexpected EOF reading ${buffer.size} bytes")
             }
             offset += count
         }
+    }
+
+    private fun readFully(input: java.io.InputStream, length: Int): ByteArray {
+        val buffer = ByteArray(length)
+        readFully(input, buffer)
         return buffer
     }
 
@@ -928,6 +1134,18 @@ class DnsttVpnService : VpnService() {
         pendingConnections.clear()
         synExecutor.shutdownNow()
         synExecutor = Executors.newFixedThreadPool(16)
+        dnsExecutor.shutdownNow()
+        dnsExecutor = ThreadPoolExecutor(
+            2,
+            4,
+            30L,
+            TimeUnit.SECONDS,
+            LinkedBlockingQueue(64)
+        ) { runnable ->
+            Thread(runnable, "dnstt-dns-forwarder").apply { isDaemon = true }
+        }.apply {
+            rejectedExecutionHandler = ThreadPoolExecutor.AbortPolicy()
+        }
 
         tcpConnections.values.forEach { it.close() }
         tcpConnections.clear()

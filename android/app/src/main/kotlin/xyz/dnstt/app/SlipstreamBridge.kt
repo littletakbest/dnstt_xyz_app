@@ -84,7 +84,7 @@ class SlipstreamBridge {
                 "--tcp-listen-port", port.toString(),
                 "--tcp-listen-host", host,
                 "--domain", domain,
-                "--resolver", "$dnsServer:53",
+                "--resolver", normalizeResolverArg(dnsServer),
                 "--congestion-control", congestionControl,
                 "--keep-alive-interval", keepAliveInterval.toString()
             )
@@ -172,5 +172,10 @@ class SlipstreamBridge {
             // Process is still running
             true
         }
+    }
+
+    private fun normalizeResolverArg(value: String): String {
+        val normalized = value.trim()
+        return if (normalized.contains(":")) normalized else "$normalized:53"
     }
 }

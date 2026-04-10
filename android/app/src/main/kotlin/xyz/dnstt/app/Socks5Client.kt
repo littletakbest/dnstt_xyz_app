@@ -85,9 +85,8 @@ class Socks5Client(
             outputStream?.flush()
 
             // Receive response
-            val response = ByteArray(2)
-            val bytesRead = inputStream?.read(response) ?: -1
-            if (bytesRead != 2 || response[0] != SOCKS_VERSION.toByte()) {
+            val response = readFully(2)
+            if (response[0] != SOCKS_VERSION.toByte()) {
                 Log.e(TAG, "Invalid SOCKS5 greeting response")
                 return false
             }
@@ -140,12 +139,7 @@ class Socks5Client(
             outputStream?.flush()
 
             // Read auth response: VER(1) | STATUS(1)
-            val authResponse = ByteArray(2)
-            val bytesRead = inputStream?.read(authResponse) ?: -1
-            if (bytesRead != 2) {
-                Log.e(TAG, "Invalid auth response length")
-                return false
-            }
+            val authResponse = readFully(2)
 
             if (authResponse[1] != 0x00.toByte()) {
                 Log.e(TAG, "Authentication failed: status=${authResponse[1]}")
@@ -181,13 +175,25 @@ class Socks5Client(
             outputStream?.flush()
 
             // Receive command response
-            val response = ByteArray(10) // Can be variable size
-            val bytesRead = inputStream?.read(response) ?: -1
-            
+            val response = readFully(4)
+
             // Basic validation
-            if (bytesRead < 4 || response[0] != SOCKS_VERSION.toByte() || response[1] != 0.toByte()) {
+            if (response[0] != SOCKS_VERSION.toByte() || response[1] != 0.toByte()) {
                 Log.e(TAG, "SOCKS5 command response invalid")
                 return false
+            }
+
+            when (response[3].toInt() and 0xFF) {
+                ADDR_TYPE_IPV4 -> readFully(6)
+                ADDR_TYPE_DOMAIN -> {
+                    val domainLength = readByte()
+                    readFully(domainLength + 2)
+                }
+                0x04 -> readFully(18)
+                else -> {
+                    Log.e(TAG, "SOCKS5 command returned unknown address type: ${response[3]}")
+                    return false
+                }
             }
 
             return true
@@ -230,6 +236,29 @@ class Socks5Client(
         } finally {
             disconnect()
         }
+    }
+
+    @Throws(IOException::class)
+    private fun readByte(): Int {
+        val value = inputStream?.read() ?: -1
+        if (value == -1) {
+            throw IOException("Unexpected EOF from SOCKS5 proxy")
+        }
+        return value
+    }
+
+    @Throws(IOException::class)
+    private fun readFully(length: Int): ByteArray {
+        val buffer = ByteArray(length)
+        var offset = 0
+        while (offset < length) {
+            val count = inputStream?.read(buffer, offset, length - offset) ?: -1
+            if (count == -1) {
+                throw IOException("Unexpected EOF from SOCKS5 proxy")
+            }
+            offset += count
+        }
+        return buffer
     }
 
     fun disconnect() {

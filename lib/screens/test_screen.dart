@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../models/dns_server.dart';
+import '../models/dnstt_config.dart';
 import '../services/dnstt_service.dart';
 import '../services/vpn_service.dart';
 import 'dart:developer' as developer;
@@ -44,7 +45,10 @@ class _TestScreenState extends State<TestScreen> {
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               ),
             ),
         ],
@@ -116,7 +120,9 @@ class _TestScreenState extends State<TestScreen> {
                       child: ElevatedButton.icon(
                         onPressed: _isTesting ? null : () => _testAll(state),
                         icon: const Icon(Icons.play_arrow),
-                        label: Text(_isTesting ? 'Testing...' : 'Test All DNS Servers'),
+                        label: Text(
+                          _isTesting ? 'Testing...' : 'Test All DNS Servers',
+                        ),
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
@@ -160,7 +166,8 @@ class _TestScreenState extends State<TestScreen> {
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (server.region != null || server.provider != null)
+                            if (server.region != null ||
+                                server.provider != null)
                               Text(
                                 [
                                   if (server.region != null) server.region,
@@ -185,7 +192,9 @@ class _TestScreenState extends State<TestScreen> {
                         trailing: server.isWorking
                             ? IconButton(
                                 icon: Icon(
-                                  isActive ? Icons.check_circle : Icons.add_circle_outline,
+                                  isActive
+                                      ? Icons.check_circle
+                                      : Icons.add_circle_outline,
                                   color: isActive ? Colors.green : null,
                                 ),
                                 onPressed: () => state.setActiveDns(server),
@@ -286,15 +295,19 @@ class _TestScreenState extends State<TestScreen> {
     final testUrl = _testUrlController.text.trim();
     if (testUrl.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a test URL')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter a test URL')));
       return;
     }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Starting test for ${state.visibleDnsServers.length} DNS servers...')),
+      SnackBar(
+        content: Text(
+          'Starting test for ${state.visibleDnsServers.length} DNS servers...',
+        ),
+      ),
     );
 
     // Request VPN permission first
@@ -314,6 +327,21 @@ class _TestScreenState extends State<TestScreen> {
 
     developer.log('VPN permission granted, starting tests');
 
+    final config = state.activeConfig!;
+    final isSlipstream = config.isSlipstream;
+    final isSshTunnel = config.tunnelType == TunnelType.ssh;
+
+    if (isSshTunnel && !config.isSshValid) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SSH tunnel settings are incomplete'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isTesting = true;
       _testedCount = 0;
@@ -327,7 +355,11 @@ class _TestScreenState extends State<TestScreen> {
       try {
         final supportMessage = state.getResolverSupportMessage(server);
         if (supportMessage != null) {
-          await state.updateDnsServerStatus(server.id, false, message: supportMessage);
+          await state.updateDnsServerStatus(
+            server.id,
+            false,
+            message: supportMessage,
+          );
           setState(() {
             _testedCount++;
           });
@@ -345,15 +377,44 @@ class _TestScreenState extends State<TestScreen> {
 
         bool connected = false;
         try {
-          connected = await _vpnService.connect(
-            proxyHost: '127.0.0.1',
-            proxyPort: state.proxyPort,
-            resolver: server,
-            tunnelDomain: state.activeConfig?.tunnelDomain,
-            publicKey: state.activeConfig?.publicKey,
-          ).timeout(const Duration(seconds: 10));
+          connected = await (() {
+            if (isSshTunnel) {
+              return _vpnService.connectSshTunnelVpn(
+                resolver: server,
+                appDnsResolver: state.effectiveAppDns,
+                strictDnsMode: state.isStrictDnsActive,
+                tunnelDomain: config.tunnelDomain,
+                publicKey: config.publicKey,
+                sshUsername: config.sshUsername!,
+                sshPassword: config.sshPassword,
+                sshPrivateKey: config.sshPrivateKey,
+              );
+            }
+            if (isSlipstream) {
+              return _vpnService.connectSlipstream(
+                resolver: server,
+                appDnsResolver: state.effectiveAppDns,
+                strictDnsMode: state.isStrictDnsActive,
+                tunnelDomain: config.tunnelDomain,
+                congestionControl: config.congestionControl ?? 'dcubic',
+                keepAliveInterval: config.keepAliveInterval ?? 400,
+                gso: config.gsoEnabled ?? false,
+              );
+            }
+            return _vpnService.connect(
+              proxyHost: '127.0.0.1',
+              proxyPort: state.proxyPort,
+              resolver: server,
+              appDnsResolver: state.effectiveAppDns,
+              strictDnsMode: state.isStrictDnsActive,
+              tunnelDomain: config.tunnelDomain,
+              publicKey: config.publicKey,
+            );
+          }()).timeout(const Duration(seconds: 10));
         } catch (e) {
-          developer.log('VPN connection timeout/error for ${server.address}: $e');
+          developer.log(
+            'VPN connection timeout/error for ${server.address}: $e',
+          );
           connected = false;
         }
 
@@ -363,7 +424,7 @@ class _TestScreenState extends State<TestScreen> {
           await state.updateDnsServerStatus(
             server.id,
             false,
-            message: 'VPN connection failed',
+            message: state.describeConnectionFailure(_vpnService.lastError),
           );
           setState(() {
             _testedCount++;
@@ -382,7 +443,9 @@ class _TestScreenState extends State<TestScreen> {
           timeout: const Duration(seconds: 15),
         );
 
-        developer.log('Test result: ${result.result}, message: ${result.message}');
+        developer.log(
+          'Test result: ${result.result}, message: ${result.message}',
+        );
 
         // Disconnect VPN and wait for cleanup
         developer.log('Disconnecting VPN');

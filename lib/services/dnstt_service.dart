@@ -43,6 +43,7 @@ class DnsttTestResult {
 
 class DnsttService {
   static const Duration testTimeout = Duration(seconds: 5);
+  static const int _advertisedDnsUdpPayloadSize = 1232;
 
   // Base32 alphabet (RFC 4648 without padding)
   static const String _base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -152,12 +153,13 @@ class DnsttService {
     query.addByte(0x00);
     query.addByte(0x01);
 
-    // EDNS0 OPT record (for larger responses)
+    // EDNS0 OPT record. Keep the advertised UDP size conservative so the test
+    // query matches the mobile client and avoids fragmentation-prone payloads.
     query.addByte(0x00); // Name: root
     query.addByte(0x00); // Type: OPT (41)
     query.addByte(0x29);
-    query.addByte(0x10); // UDP payload size: 4096
-    query.addByte(0x00);
+    query.addByte((_advertisedDnsUdpPayloadSize >> 8) & 0xFF);
+    query.addByte(_advertisedDnsUdpPayloadSize & 0xFF);
     query.addByte(0x00); // Extended RCODE
     query.addByte(0x00); // Version
     query.addByte(0x00); // Flags
@@ -316,7 +318,7 @@ class DnsttService {
           return DnsttTestResult(
             server: server,
             result: TestResult.success,
-            message: 'Tunnel working',
+            message: 'Tunnel bootstrap succeeded',
             latency: Duration(milliseconds: result),
           );
         } else {
@@ -354,7 +356,7 @@ class DnsttService {
         return DnsttTestResult(
           server: server,
           result: TestResult.success,
-          message: 'Tunnel working',
+          message: 'Tunnel bootstrap succeeded',
           latency: Duration(milliseconds: result),
         );
       } else if (result == -2) {
@@ -418,7 +420,7 @@ class DnsttService {
         return DnsttTestResult(
           server: server,
           result: TestResult.success,
-          message: 'Tunnel working',
+          message: 'Tunnel bootstrap succeeded',
           latency: Duration(milliseconds: result),
         );
       } else if (result == -2) {
@@ -469,7 +471,7 @@ class DnsttService {
         return DnsttTestResult(
           server: server,
           result: TestResult.success,
-          message: 'Tunnel working',
+          message: 'Tunnel bootstrap succeeded',
           latency: Duration(milliseconds: result),
         );
       } else {
@@ -524,6 +526,7 @@ class DnsttService {
       } else {
         query = _buildSimpleDnsQuery();
       }
+      final expectedTransactionId = _transactionIdFromWire(query);
 
       socket.send(query, udpAddress, 53);
 
@@ -538,8 +541,8 @@ class DnsttService {
               server: server,
               result: TestResult.timeout,
               message: isDnsttTest
-                  ? 'Tunnel query timed out'
-                  : 'DNS query timed out',
+                  ? 'DNSTT bootstrap timed out'
+                  : 'Resolver query timed out',
             ),
           );
         }
@@ -548,126 +551,159 @@ class DnsttService {
       socket.listen((event) {
         if (event == RawSocketEvent.read && !completer.isCompleted) {
           final datagram = socket?.receive();
-          if (datagram != null && datagram.data.length > 12) {
+          if (datagram == null) {
+            return;
+          }
+
+          if (datagram.address != udpAddress || datagram.port != 53) {
+            debugPrint(
+              'DnsTest udp ignore-source resolver=${server.displayName} '
+              'source=${datagram.address.address}:${datagram.port}',
+            );
+            return;
+          }
+
+          if (datagram.data.length < 12) {
             stopwatch.stop();
             timeoutTimer?.cancel();
+            completer.complete(
+              DnsttTestResult(
+                server: server,
+                result: TestResult.failed,
+                message: 'Invalid DNS response',
+              ),
+            );
+            return;
+          }
 
-            // Check if it's a valid DNS response
-            final flags = datagram.data[2];
-            final isResponse = (flags & 0x80) != 0;
+          final responseTransactionId = _transactionIdFromWire(datagram.data);
+          if (responseTransactionId != expectedTransactionId) {
+            debugPrint(
+              'DnsTest udp ignore-transaction resolver=${server.displayName} '
+              'expected=$expectedTransactionId actual=$responseTransactionId',
+            );
+            return;
+          }
 
-            // Check RCODE (last 4 bits of second flag byte)
-            final rcode = datagram.data[3] & 0x0F;
+          stopwatch.stop();
+          timeoutTimer?.cancel();
 
-            if (!isResponse) {
-              debugPrint(
-                'DnsTest udp invalid-response resolver=${server.displayName}',
-              );
-              completer.complete(
-                DnsttTestResult(
-                  server: server,
-                  result: TestResult.failed,
-                  message: 'Invalid DNS response',
-                ),
-              );
-              return;
-            }
+          if (_isTruncatedDnsResponse(datagram.data)) {
+            completer.complete(
+              DnsttTestResult(
+                server: server,
+                result: TestResult.failed,
+                message: 'Resolver response was truncated',
+              ),
+            );
+            return;
+          }
 
-            if (isDnsttTest) {
-              // For DNSTT test, check if we got a TXT response
-              // RCODE 0 = success, 3 = NXDOMAIN (domain not found)
-              if (rcode == 0) {
-                // Check if there's an answer section
-                final answerCount = (datagram.data[6] << 8) | datagram.data[7];
-                if (answerCount > 0) {
-                  debugPrint(
-                    'DnsTest udp success resolver=${server.displayName} '
-                    'latency=${stopwatch.elapsedMilliseconds}ms answers=$answerCount',
-                  );
-                  completer.complete(
-                    DnsttTestResult(
-                      server: server,
-                      result: TestResult.success,
-                      message: 'Tunnel working',
-                      latency: stopwatch.elapsed,
-                    ),
-                  );
-                } else {
-                  // No answer but no error - might work
-                  debugPrint(
-                    'DnsTest udp reachable resolver=${server.displayName} '
-                    'latency=${stopwatch.elapsedMilliseconds}ms answers=0',
-                  );
-                  completer.complete(
-                    DnsttTestResult(
-                      server: server,
-                      result: TestResult.success,
-                      message: 'Tunnel reachable',
-                      latency: stopwatch.elapsed,
-                    ),
-                  );
-                }
-              } else if (rcode == 3) {
-                completer.complete(
-                  DnsttTestResult(
-                    server: server,
-                    result: TestResult.failed,
-                    message: 'Domain not found (NXDOMAIN)',
-                  ),
-                );
-              } else if (rcode == 2) {
-                completer.complete(
-                  DnsttTestResult(
-                    server: server,
-                    result: TestResult.failed,
-                    message: 'Server failure (SERVFAIL)',
-                  ),
-                );
-              } else if (rcode == 5) {
-                completer.complete(
-                  DnsttTestResult(
-                    server: server,
-                    result: TestResult.failed,
-                    message: 'Query refused',
-                  ),
-                );
-              } else {
-                completer.complete(
-                  DnsttTestResult(
-                    server: server,
-                    result: TestResult.failed,
-                    message: 'DNS error (RCODE: $rcode)',
-                  ),
-                );
-              }
-            } else {
-              // Simple DNS test - just check for response
-              if (rcode == 0) {
+          // Check if it's a valid DNS response
+          final flags = datagram.data[2];
+          final isResponse = (flags & 0x80) != 0;
+
+          // Check RCODE (last 4 bits of second flag byte)
+          final rcode = datagram.data[3] & 0x0F;
+
+          if (!isResponse) {
+            debugPrint(
+              'DnsTest udp invalid-response resolver=${server.displayName}',
+            );
+            completer.complete(
+              DnsttTestResult(
+                server: server,
+                result: TestResult.failed,
+                message: 'Invalid DNS response',
+              ),
+            );
+            return;
+          }
+
+          if (isDnsttTest) {
+            if (rcode == 0) {
+              final answerCount = (datagram.data[6] << 8) | datagram.data[7];
+              if (answerCount > 0) {
                 debugPrint(
-                  'DnsTest udp success resolver=${server.displayName} '
-                  'latency=${stopwatch.elapsedMilliseconds}ms',
+                  'DnsTest udp bootstrap-success resolver=${server.displayName} '
+                  'latency=${stopwatch.elapsedMilliseconds}ms answers=$answerCount',
                 );
                 completer.complete(
                   DnsttTestResult(
                     server: server,
                     result: TestResult.success,
-                    message: 'DNS working',
+                    message: 'Tunnel bootstrap succeeded',
                     latency: stopwatch.elapsed,
                   ),
                 );
               } else {
-                debugPrint(
-                  'DnsTest udp failed resolver=${server.displayName} '
-                  'rcode=$rcode',
-                );
                 completer.complete(
                   DnsttTestResult(
                     server: server,
                     result: TestResult.failed,
-                    message: 'DNS error (RCODE: $rcode)',
+                    message: 'Bootstrap query answered without TXT data',
                   ),
                 );
               }
+            } else if (rcode == 3) {
+              completer.complete(
+                DnsttTestResult(
+                  server: server,
+                  result: TestResult.failed,
+                  message: 'DNSTT bootstrap returned NXDOMAIN',
+                ),
+              );
+            } else if (rcode == 2) {
+              completer.complete(
+                DnsttTestResult(
+                  server: server,
+                  result: TestResult.failed,
+                  message: 'DNSTT bootstrap returned SERVFAIL',
+                ),
+              );
+            } else if (rcode == 5) {
+              completer.complete(
+                DnsttTestResult(
+                  server: server,
+                  result: TestResult.failed,
+                  message: 'DNSTT bootstrap query was refused',
+                ),
+              );
+            } else {
+              completer.complete(
+                DnsttTestResult(
+                  server: server,
+                  result: TestResult.failed,
+                  message: 'DNSTT bootstrap failed (RCODE: $rcode)',
+                ),
+              );
+            }
+          } else {
+            if (rcode == 0) {
+              debugPrint(
+                'DnsTest udp resolver-success resolver=${server.displayName} '
+                'latency=${stopwatch.elapsedMilliseconds}ms',
+              );
+              completer.complete(
+                DnsttTestResult(
+                  server: server,
+                  result: TestResult.success,
+                  message: 'Resolver answered DNS',
+                  latency: stopwatch.elapsed,
+                ),
+              );
+            } else {
+              debugPrint(
+                'DnsTest udp failed resolver=${server.displayName} '
+                'rcode=$rcode',
+              );
+              completer.complete(
+                DnsttTestResult(
+                  server: server,
+                  result: TestResult.failed,
+                  message: 'Resolver returned DNS error (RCODE: $rcode)',
+                ),
+              );
             }
           }
         }
@@ -716,6 +752,7 @@ class DnsttService {
       debugPrint('DnsTest doh resolver=${server.displayName} url=$uri');
 
       final query = _buildSimpleDnsQuery();
+      final expectedTransactionId = _transactionIdFromWire(query);
       final request = await client.postUrl(uri).timeout(timeout);
       request.headers.set('Accept', 'application/dns-message');
       request.headers.set('Content-Type', 'application/dns-message');
@@ -746,6 +783,7 @@ class DnsttService {
         server: server,
         data: body,
         stopwatch: stopwatch,
+        expectedTransactionId: expectedTransactionId,
       );
       debugPrint(
         'DnsTest doh ${result.result == TestResult.success ? 'success' : 'failed'} '
@@ -798,6 +836,7 @@ class DnsttService {
     try {
       final baseUri = Uri.parse(server.address);
       final query = _buildSimpleDnsQuery();
+      final expectedTransactionId = _transactionIdFromWire(query);
       final encodedQuery = base64UrlEncode(query).replaceAll('=', '');
       final uri = baseUri.replace(
         queryParameters: {...baseUri.queryParameters, 'dns': encodedQuery},
@@ -833,6 +872,7 @@ class DnsttService {
         server: server,
         data: body,
         stopwatch: activeStopwatch,
+        expectedTransactionId: expectedTransactionId,
       );
       debugPrint(
         'DnsTest doh-get ${result.result == TestResult.success ? 'success' : 'failed'} '
@@ -904,6 +944,7 @@ class DnsttService {
       );
 
       final query = _buildSimpleDnsQuery();
+      final expectedTransactionId = _transactionIdFromWire(query);
       final framedQuery = BytesBuilder(copy: false)
         ..addByte((query.length >> 8) & 0xFF)
         ..addByte(query.length & 0xFF)
@@ -917,6 +958,7 @@ class DnsttService {
         server: server,
         data: response,
         stopwatch: stopwatch,
+        expectedTransactionId: expectedTransactionId,
       );
       debugPrint(
         'DnsTest dot ${result.result == TestResult.success ? 'success' : 'failed'} '
@@ -962,6 +1004,7 @@ class DnsttService {
     required DnsServer server,
     required Uint8List data,
     required Stopwatch stopwatch,
+    required int expectedTransactionId,
   }) {
     stopwatch.stop();
 
@@ -970,6 +1013,22 @@ class DnsttService {
         server: server,
         result: TestResult.failed,
         message: 'Invalid DNS response',
+      );
+    }
+
+    if (_transactionIdFromWire(data) != expectedTransactionId) {
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Mismatched DNS transaction ID',
+      );
+    }
+
+    if (_isTruncatedDnsResponse(data)) {
+      return DnsttTestResult(
+        server: server,
+        result: TestResult.failed,
+        message: 'Resolver response was truncated',
       );
     }
 
@@ -988,7 +1047,7 @@ class DnsttService {
       return DnsttTestResult(
         server: server,
         result: TestResult.success,
-        message: 'DNS working',
+        message: 'Resolver answered DNS',
         latency: stopwatch.elapsed,
       );
     }
@@ -996,9 +1055,19 @@ class DnsttService {
     return DnsttTestResult(
       server: server,
       result: TestResult.failed,
-      message: 'DNS error (RCODE: $rcode)',
+      message: 'Resolver returned DNS error (RCODE: $rcode)',
     );
   }
+
+  static int _transactionIdFromWire(List<int> data) {
+    if (data.length < 2) {
+      return -1;
+    }
+    return (data[0] << 8) | data[1];
+  }
+
+  static bool _isTruncatedDnsResponse(List<int> data) =>
+      data.length > 2 && (data[2] & 0x02) != 0;
 
   static ({String host, int port})? _parseDotEndpoint(String address) {
     final normalized = address.trim();
@@ -1092,7 +1161,7 @@ class DnsttService {
     String testUrl = 'https://api.ipify.org?format=json',
     int concurrency = 3, // Lower concurrency for real tunnel tests
     Duration timeout = const Duration(seconds: 20),
-    void Function(DnsttTestResult)? onResult,
+    Future<void> Function(DnsttTestResult)? onResult,
     bool Function()? shouldCancel,
     TransportType transportType = TransportType.dnstt,
     String congestionControl = 'dcubic',
@@ -1128,7 +1197,7 @@ class DnsttService {
         );
 
         // Call onResult immediately after each test
-        onResult?.call(result);
+        await onResult?.call(result);
       }
       return true;
     }
@@ -1165,7 +1234,7 @@ class DnsttService {
       // Wait for batch to complete
       final batchResults = await Future.wait(batch);
       for (final result in batchResults) {
-        onResult?.call(result);
+        await onResult?.call(result);
       }
     }
 
@@ -1177,7 +1246,7 @@ class DnsttService {
     List<DnsServer> servers, {
     int concurrency = 3,
     Duration timeout = testTimeout,
-    void Function(DnsttTestResult)? onResult,
+    Future<void> Function(DnsttTestResult)? onResult,
     bool Function()? shouldCancel,
   }) async {
     final queue = List<DnsServer>.from(servers);
@@ -1197,7 +1266,7 @@ class DnsttService {
 
       final results = await Future.wait(batch);
       for (final result in results) {
-        onResult?.call(result);
+        await onResult?.call(result);
       }
     }
 

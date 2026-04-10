@@ -513,6 +513,14 @@ class VpnService {
     _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
 
+    if (!_supportsSlipstreamBootstrapResolver(resolver)) {
+      _lastError = _unsupportedSlipstreamResolverMessage(resolver);
+      _currentState = VpnState.error;
+      _activeTransport = null;
+      _stateController.add(_currentState);
+      return false;
+    }
+
     if (_isDesktop) {
       return _connectDesktopSlipstream(
         resolver: resolver,
@@ -594,6 +602,15 @@ class VpnService {
 
     _connectedDns = resolver.displayName;
     _connectedDomain = tunnelDomain;
+
+    if (!_supportsSlipstreamBootstrapResolver(resolver)) {
+      _lastError = _unsupportedSlipstreamResolverMessage(resolver);
+      _currentState = VpnState.error;
+      _isProxyMode = false;
+      _activeTransport = null;
+      _stateController.add(_currentState);
+      return false;
+    }
 
     if (!_platformSupported) {
       await Future.delayed(const Duration(milliseconds: 1500));
@@ -1384,6 +1401,11 @@ class VpnService {
     int keepAliveInterval = 400,
     bool gso = false,
   }) async {
+    if (!_supportsSlipstreamBootstrapResolver(resolver)) {
+      print(_unsupportedSlipstreamResolverMessage(resolver));
+      return -1;
+    }
+
     if (_isDesktop) {
       // Use subprocess on desktop
       try {
@@ -1496,4 +1518,11 @@ class VpnService {
       resolverDisplayNameKey: resolver.displayName,
     };
   }
+
+  bool _supportsSlipstreamBootstrapResolver(DnsServer resolver) =>
+      resolver.isUdpResolver || resolver.isSystemResolver;
+
+  String _unsupportedSlipstreamResolverMessage(DnsServer resolver) =>
+      'Slipstream currently supports UDP or the detected local resolver for bootstrap only. '
+      'Selected resolver type: ${resolver.resolverType.wireName}.';
 }

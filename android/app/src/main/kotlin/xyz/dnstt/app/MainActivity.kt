@@ -229,8 +229,12 @@ class MainActivity : FlutterActivity() {
                 // Slipstream methods
                 "connectSlipstream" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverType = call.argument<String>("resolverType") ?: "udp"
+                    val resolverValue = call.argument<String>("resolverValue") ?: dnsServer
                     val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val appDnsServer = call.argument<String>("appDnsServer") ?: dnsServer
+                    val appResolverType = call.argument<String>("appDnsResolverType") ?: resolverType
+                    val appResolverValue = call.argument<String>("appDnsResolverValue") ?: appDnsServer
                     val appResolverDisplayName = call.argument<String>("appDnsResolverDisplayName") ?: resolverDisplayName
                     val strictDnsMode = call.argument<Boolean>("strictDnsMode") ?: true
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
@@ -239,8 +243,12 @@ class MainActivity : FlutterActivity() {
                     val gso = call.argument<Boolean>("gso") ?: false
                     connectSlipstreamVpn(
                         dnsServer,
+                        resolverType,
+                        resolverValue,
                         resolverDisplayName,
                         appDnsServer,
+                        appResolverType,
+                        appResolverValue,
                         appResolverDisplayName,
                         strictDnsMode,
                         tunnelDomain,
@@ -252,13 +260,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "connectSlipstreamProxy" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: "8.8.8.8"
+                    val resolverType = call.argument<String>("resolverType") ?: "udp"
                     val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val proxyPort = call.argument<Int>("proxyPort") ?: 7000
                     val congestionControl = call.argument<String>("congestionControl") ?: "dcubic"
                     val keepAliveInterval = call.argument<Int>("keepAliveInterval") ?: 400
                     val gso = call.argument<Boolean>("gso") ?: false
-                    connectSlipstreamProxyOnly(dnsServer, resolverDisplayName, tunnelDomain, proxyPort, congestionControl, keepAliveInterval, gso, result)
+                    connectSlipstreamProxyOnly(dnsServer, resolverType, resolverDisplayName, tunnelDomain, proxyPort, congestionControl, keepAliveInterval, gso, result)
                 }
                 "disconnectSlipstreamProxy" -> {
                     disconnectSlipstreamProxyOnly(result)
@@ -278,6 +287,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "testSlipstreamDnsServer" -> {
                     val dnsServer = call.argument<String>("dnsServer") ?: ""
+                    val resolverType = call.argument<String>("resolverType") ?: "udp"
                     val resolverDisplayName = call.argument<String>("resolverDisplayName") ?: dnsServer
                     val tunnelDomain = call.argument<String>("tunnelDomain") ?: ""
                     val testUrl = call.argument<String>("testUrl") ?: "https://api.ipify.org?format=json"
@@ -285,7 +295,7 @@ class MainActivity : FlutterActivity() {
                     val congestionControl = call.argument<String>("congestionControl") ?: "dcubic"
                     val keepAliveInterval = call.argument<Int>("keepAliveInterval") ?: 400
                     val gso = call.argument<Boolean>("gso") ?: false
-                    testSlipstreamDnsServer(dnsServer, resolverDisplayName, tunnelDomain, testUrl, timeoutMs, congestionControl, keepAliveInterval, gso, result)
+                    testSlipstreamDnsServer(dnsServer, resolverType, resolverDisplayName, tunnelDomain, testUrl, timeoutMs, congestionControl, keepAliveInterval, gso, result)
                 }
                 else -> result.notImplemented()
             }
@@ -590,8 +600,12 @@ class MainActivity : FlutterActivity() {
     // Slipstream VPN mode
     private fun connectSlipstreamVpn(
         dnsServer: String,
+        resolverType: String,
+        resolverValue: String,
         resolverDisplayName: String,
         appDnsServer: String,
+        appResolverType: String,
+        appResolverValue: String,
         appResolverDisplayName: String,
         strictDnsMode: Boolean,
         tunnelDomain: String,
@@ -605,8 +619,12 @@ class MainActivity : FlutterActivity() {
             pendingResult = result
             pendingSlipstreamVpnParams = SlipstreamVpnParams(
                 dnsServer,
+                resolverType,
+                resolverValue,
                 resolverDisplayName,
                 appDnsServer,
+                appResolverType,
+                appResolverValue,
                 appResolverDisplayName,
                 strictDnsMode,
                 tunnelDomain,
@@ -620,8 +638,12 @@ class MainActivity : FlutterActivity() {
 
         startSlipstreamVpnService(
             dnsServer,
+            resolverType,
+            resolverValue,
             resolverDisplayName,
             appDnsServer,
+            appResolverType,
+            appResolverValue,
             appResolverDisplayName,
             strictDnsMode,
             tunnelDomain,
@@ -634,8 +656,12 @@ class MainActivity : FlutterActivity() {
 
     private data class SlipstreamVpnParams(
         val dnsServer: String,
+        val resolverType: String,
+        val resolverValue: String,
         val resolverDisplayName: String,
         val appDnsServer: String,
+        val appResolverType: String,
+        val appResolverValue: String,
         val appResolverDisplayName: String,
         val strictDnsMode: Boolean,
         val tunnelDomain: String,
@@ -648,8 +674,12 @@ class MainActivity : FlutterActivity() {
 
     private fun startSlipstreamVpnService(
         dnsServer: String,
+        resolverType: String,
+        resolverValue: String,
         resolverDisplayName: String,
         appDnsServer: String,
+        appResolverType: String,
+        appResolverValue: String,
         appResolverDisplayName: String,
         strictDnsMode: Boolean,
         tunnelDomain: String,
@@ -665,12 +695,12 @@ class MainActivity : FlutterActivity() {
             putExtra(DnsttVpnService.EXTRA_PROXY_HOST, "127.0.0.1")
             putExtra(DnsttVpnService.EXTRA_PROXY_PORT, 7000)
             putExtra(DnsttVpnService.EXTRA_DNS_SERVER, dnsServer)
-            putExtra(DnsttVpnService.EXTRA_RESOLVER_TYPE, "udp")
-            putExtra(DnsttVpnService.EXTRA_RESOLVER_VALUE, dnsServer)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_TYPE, resolverType)
+            putExtra(DnsttVpnService.EXTRA_RESOLVER_VALUE, resolverValue)
             putExtra(DnsttVpnService.EXTRA_RESOLVER_DISPLAY_NAME, resolverDisplayName)
             putExtra(DnsttVpnService.EXTRA_APP_DNS_SERVER, appDnsServer)
-            putExtra(DnsttVpnService.EXTRA_APP_RESOLVER_TYPE, "udp")
-            putExtra(DnsttVpnService.EXTRA_APP_RESOLVER_VALUE, appDnsServer)
+            putExtra(DnsttVpnService.EXTRA_APP_RESOLVER_TYPE, appResolverType)
+            putExtra(DnsttVpnService.EXTRA_APP_RESOLVER_VALUE, appResolverValue)
             putExtra(DnsttVpnService.EXTRA_APP_RESOLVER_DISPLAY_NAME, appResolverDisplayName)
             putExtra(DnsttVpnService.EXTRA_STRICT_DNS_MODE, strictDnsMode)
             putExtra(DnsttVpnService.EXTRA_TUNNEL_DOMAIN, tunnelDomain)
@@ -686,6 +716,7 @@ class MainActivity : FlutterActivity() {
     // Slipstream proxy-only mode
     private fun connectSlipstreamProxyOnly(
         dnsServer: String,
+        resolverType: String,
         resolverDisplayName: String,
         tunnelDomain: String,
         proxyPort: Int,
@@ -694,6 +725,12 @@ class MainActivity : FlutterActivity() {
         gso: Boolean,
         result: MethodChannel.Result
     ) {
+        if (resolverType != "udp" && resolverType != "system") {
+            Log.e("SlipstreamProxy", "Unsupported bootstrap resolver type for Slipstream proxy: $resolverType")
+            result.success(false)
+            return
+        }
+
         if (SlipstreamProxyService.isRunning.get()) {
             result.success(true)
             return
@@ -743,6 +780,7 @@ class MainActivity : FlutterActivity() {
     // Slipstream DNS server testing
     private fun testSlipstreamDnsServer(
         dnsServer: String,
+        resolverType: String,
         resolverDisplayName: String,
         tunnelDomain: String,
         testUrl: String,
@@ -752,6 +790,12 @@ class MainActivity : FlutterActivity() {
         gso: Boolean,
         result: MethodChannel.Result
     ) {
+        if (resolverType != "udp" && resolverType != "system") {
+            Log.e("SlipstreamTest", "Unsupported bootstrap resolver type for Slipstream test: $resolverType")
+            result.success(-1)
+            return
+        }
+
         if (!SlipstreamBridge.isAvailable()) {
             Log.e("SlipstreamTest", "Slipstream library not available")
             result.success(-1)
@@ -1188,8 +1232,12 @@ class MainActivity : FlutterActivity() {
                     pendingSlipstreamVpnParams = null
                     startSlipstreamVpnService(
                         params.dnsServer,
+                        params.resolverType,
+                        params.resolverValue,
                         params.resolverDisplayName,
                         params.appDnsServer,
+                        params.appResolverType,
+                        params.appResolverValue,
                         params.appResolverDisplayName,
                         params.strictDnsMode,
                         params.tunnelDomain,

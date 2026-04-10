@@ -240,7 +240,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               const Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
-                  'Strict DNS mode is active. Local DNS is bootstrap-only and app DNS is tunneled through Google DNS.',
+                  'Strict DNS mode is active. The detected local resolver is bootstrap-only and app DNS is tunneled through Google DNS.',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ),

@@ -48,6 +48,14 @@ cp dnstt.aar ../android/app/libs/
 ./scripts/build_slipstream_android.sh
 ```
 
+## Resolver Semantics
+
+- Bootstrap resolver: used only to establish the DNSTT or Slipstream tunnel.
+- App DNS resolver: used for device and app DNS after the tunnel is established.
+- Non-strict DNS may use Android's direct network path, but it must use the selected app DNS resolver rather than silently reusing the bootstrap resolver.
+- Strict DNS keeps app DNS inside the tunnel and chooses tunneled UDP/TCP, DoH, or DoT handling based on the selected app resolver type.
+- The `system` option means the app detected a local resolver address from Android and reuses that address. It does not delegate to Android's full native resolver stack end-to-end.
+
 ## Project Structure
 
 ```text

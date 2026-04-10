@@ -28,7 +28,10 @@ class SlipstreamService {
 
     if (Platform.isMacOS) {
       final bundlePath = executablePath.contains('/Contents/MacOS/')
-          ? executablePath.substring(0, executablePath.indexOf('/Contents/MacOS/'))
+          ? executablePath.substring(
+              0,
+              executablePath.indexOf('/Contents/MacOS/'),
+            )
           : executablePath;
       final contentsPath = '$bundlePath/Contents';
       paths = [
@@ -67,14 +70,16 @@ class SlipstreamService {
     }
 
     // Try PATH lookup as fallback
-    print('SlipstreamService: binary not found in known paths, falling back to PATH lookup');
+    print(
+      'SlipstreamService: binary not found in known paths, falling back to PATH lookup',
+    );
     return 'slipstream-client';
   }
 
   /// Start the slipstream-client subprocess.
   ///
   /// [domain] - Tunnel domain (e.g., "tunnel.example.com")
-  /// [dnsServerAddr] - DNS server address used as resolver (from DNS server list)
+  /// [dnsServerAddr] - Raw resolver host or host:port used for bootstrap DNS
   /// [listenPort] - Local SOCKS5 proxy port (default 7000)
   /// [congestionControl] - "bbr" or "dcubic" (default "dcubic")
   /// [keepAliveInterval] - Keep-alive interval in ms (default 400)
@@ -92,6 +97,12 @@ class SlipstreamService {
       return false;
     }
 
+    if (_looksLikeUnsupportedResolver(dnsServerAddr)) {
+      _lastError =
+          'Slipstream expects a raw UDP resolver host or host:port for bootstrap, not $dnsServerAddr';
+      return false;
+    }
+
     final binaryPath = _findBinaryPath();
     if (binaryPath == null) {
       _lastError = 'slipstream-client binary not found';
@@ -102,11 +113,16 @@ class SlipstreamService {
 
     try {
       final args = [
-        '--tcp-listen-port', listenPort.toString(),
-        '--domain', domain,
-        '--resolver', '$dnsServerAddr:53',
-        '--congestion-control', congestionControl,
-        '--keep-alive-interval', keepAliveInterval.toString(),
+        '--tcp-listen-port',
+        listenPort.toString(),
+        '--domain',
+        domain,
+        '--resolver',
+        _normalizeResolverArg(dnsServerAddr),
+        '--congestion-control',
+        congestionControl,
+        '--keep-alive-interval',
+        keepAliveInterval.toString(),
       ];
 
       if (gso) {
@@ -193,6 +209,13 @@ class SlipstreamService {
     int keepAliveInterval = 400,
     bool gso = false,
   }) async {
+    if (_looksLikeUnsupportedResolver(dnsServerAddr)) {
+      print(
+        'SlipstreamService.testServer: unsupported bootstrap resolver $dnsServerAddr',
+      );
+      return -1;
+    }
+
     final binaryPath = _findBinaryPath();
     if (binaryPath == null) {
       print('SlipstreamService.testServer: binary not found');
@@ -206,18 +229,25 @@ class SlipstreamService {
     Process? testProcess;
     try {
       final args = [
-        '--tcp-listen-port', listenPort.toString(),
-        '--domain', domain,
-        '--resolver', '$dnsServerAddr:53',
-        '--congestion-control', congestionControl,
-        '--keep-alive-interval', keepAliveInterval.toString(),
+        '--tcp-listen-port',
+        listenPort.toString(),
+        '--domain',
+        domain,
+        '--resolver',
+        _normalizeResolverArg(dnsServerAddr),
+        '--congestion-control',
+        congestionControl,
+        '--keep-alive-interval',
+        keepAliveInterval.toString(),
       ];
 
       if (gso) {
         args.add('--gso');
       }
 
-      print('SlipstreamService.testServer: starting on port $listenPort for $dnsServerAddr');
+      print(
+        'SlipstreamService.testServer: starting on port $listenPort for $dnsServerAddr',
+      );
       testProcess = await Process.start(binaryPath, args);
 
       // Capture stderr for debugging
@@ -237,7 +267,9 @@ class SlipstreamService {
 
       if (checkResult.startsWith('exited')) {
         final stderr = stderrBuffer.toString();
-        print('SlipstreamService.testServer: process exited early for $dnsServerAddr: $stderr');
+        print(
+          'SlipstreamService.testServer: process exited early for $dnsServerAddr: $stderr',
+        );
         return -1;
       }
 
@@ -249,19 +281,25 @@ class SlipstreamService {
         SocksTCPClient.assignToHttpClientWithSecureOptions(client, [
           ProxySettings(InternetAddress('127.0.0.1'), listenPort),
         ]);
-        final request = await client.getUrl(Uri.parse(testUrl))
+        final request = await client
+            .getUrl(Uri.parse(testUrl))
             .timeout(Duration(milliseconds: timeoutMs));
         request.headers.set('Connection', 'close');
-        final response = await request.close()
-            .timeout(Duration(milliseconds: timeoutMs));
+        final response = await request.close().timeout(
+          Duration(milliseconds: timeoutMs),
+        );
         stopwatch.stop();
         client.close(force: true);
 
         if (response.statusCode >= 200 && response.statusCode < 400) {
-          print('SlipstreamService.testServer: SUCCESS for $dnsServerAddr (${stopwatch.elapsedMilliseconds}ms)');
+          print(
+            'SlipstreamService.testServer: SUCCESS for $dnsServerAddr (${stopwatch.elapsedMilliseconds}ms)',
+          );
           return stopwatch.elapsedMilliseconds;
         }
-        print('SlipstreamService.testServer: HTTP ${response.statusCode} for $dnsServerAddr');
+        print(
+          'SlipstreamService.testServer: HTTP ${response.statusCode} for $dnsServerAddr',
+        );
         return -1;
       } on TimeoutException {
         client.close(force: true);
@@ -273,7 +311,9 @@ class SlipstreamService {
         return -1;
       }
     } catch (e) {
-      print('SlipstreamService.testServer: process error for $dnsServerAddr: $e');
+      print(
+        'SlipstreamService.testServer: process error for $dnsServerAddr: $e',
+      );
       return -1;
     } finally {
       if (testProcess != null) {
@@ -288,5 +328,16 @@ class SlipstreamService {
         );
       }
     }
+  }
+
+  bool _looksLikeUnsupportedResolver(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.startsWith('https://') ||
+        normalized.startsWith('http://');
+  }
+
+  String _normalizeResolverArg(String value) {
+    final normalized = value.trim();
+    return normalized.contains(':') ? normalized : '$normalized:53';
   }
 }

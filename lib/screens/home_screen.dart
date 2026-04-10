@@ -445,7 +445,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       state.activeDns?.isSystemResolver == true) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Strict mode is on. Local DNS is used only to start the tunnel, and normal app DNS is tunneled through Google DNS to prevent leaks.',
+                      'Strict mode is on. The detected local resolver is used only to start the tunnel, and normal app DNS is tunneled through Google DNS to prevent leaks.',
                       style: TextStyle(color: Colors.grey[600], fontSize: 12),
                       textAlign: TextAlign.center,
                     ),
@@ -741,7 +741,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Strict DNS'),
                   subtitle: const Text(
-                    'Prevents DNS leaks from normal apps. Local DNS is bootstrap-only in this mode and app DNS falls back to 8.8.8.8.',
+                    'Prevents DNS leaks from normal apps. The detected local resolver is bootstrap-only in this mode and app DNS falls back to 8.8.8.8.',
                   ),
                   value: state.strictDnsMode,
                   onChanged: (value) async {
@@ -794,12 +794,15 @@ class _HomeScreenState extends State<HomeScreen> {
       state.addLog('Refreshing local DNS before connecting');
       await state.refreshAutoDns();
       if (state.activeDns == null) {
-        state.addLog(state.autoDnsError ?? 'Could not detect system DNS');
+        state.addLog(
+          state.autoDnsError ?? 'Could not detect the local resolver address',
+        );
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                state.autoDnsError ?? 'Could not detect system DNS',
+                state.autoDnsError ??
+                    'Could not detect the local resolver address',
               ),
               backgroundColor: Colors.red,
             ),

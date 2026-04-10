@@ -475,7 +475,7 @@ class AppState extends ChangeNotifier {
 
   String? getResolverSupportMessage(DnsServer server) {
     if (server.isSystemResolver && _autoDnsServer == null) {
-      return _autoDnsError ?? 'Could not detect local DNS';
+      return _autoDnsError ?? 'Could not detect the local resolver address';
     }
     return null;
   }
@@ -513,7 +513,7 @@ class AppState extends ChangeNotifier {
     final resolver = activeDns;
     if (resolver == null) return 'No DNS selected';
     if (resolver.isSystemResolver) {
-      return '${resolver.displayAddress} (Local)';
+      return '${resolver.displayAddress} (detected local resolver)';
     }
     return resolver.displayName;
   }
@@ -583,8 +583,8 @@ class AppState extends ChangeNotifier {
         id: DnsServer.localDnsId,
         address: addr,
         bootstrapAddress: addr,
-        name: 'Local DNS',
-        provider: 'System',
+        name: 'Detected Local Resolver',
+        provider: 'System network',
         group: 'local',
         isPreset: true,
         resolverType: DnsResolverType.system,
@@ -595,7 +595,7 @@ class AppState extends ChangeNotifier {
       );
     } else {
       _autoDnsServer = null;
-      _autoDnsError = 'Could not detect system DNS';
+      _autoDnsError = 'Could not detect the local resolver address';
     }
   }
 
@@ -614,7 +614,8 @@ class AppState extends ChangeNotifier {
       ConnectionStatus.connected => 'Connection established',
       ConnectionStatus.connecting => 'Connecting',
       ConnectionStatus.disconnected => 'Disconnected',
-      ConnectionStatus.error => details == null ? 'Connection error' : 'Connection error: $details',
+      ConnectionStatus.error =>
+        details == null ? 'Connection error' : 'Connection error: $details',
     };
     addLog(message);
     notifyListeners();

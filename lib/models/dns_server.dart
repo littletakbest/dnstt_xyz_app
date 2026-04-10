@@ -4,11 +4,11 @@ enum DnsResolverType { udp, doh, dot, system }
 
 extension DnsResolverTypeWire on DnsResolverType {
   String get wireName => switch (this) {
-        DnsResolverType.udp => 'udp',
-        DnsResolverType.doh => 'doh',
-        DnsResolverType.dot => 'dot',
-        DnsResolverType.system => 'system',
-      };
+    DnsResolverType.udp => 'udp',
+    DnsResolverType.doh => 'doh',
+    DnsResolverType.dot => 'dot',
+    DnsResolverType.system => 'system',
+  };
 
   static DnsResolverType fromWireName(String? value) {
     return switch (value) {
@@ -70,9 +70,9 @@ class DnsServer {
   String get connectAddress => bootstrapAddress ?? address;
 
   String get resolverValue => switch (resolverType) {
-        DnsResolverType.system => connectAddress,
-        _ => address,
-      };
+    DnsResolverType.system => connectAddress,
+    _ => address,
+  };
 
   String get subtitleText {
     final parts = <String>[
@@ -82,29 +82,29 @@ class DnsServer {
         DnsResolverType.udp => 'UDP',
         DnsResolverType.doh => 'DoH',
         DnsResolverType.dot => 'DoT',
-        DnsResolverType.system => 'Local DNS',
+        DnsResolverType.system => 'Detected local resolver',
       },
     ];
-    return parts.join(' • ');
+    return parts.join(' - ');
   }
 
   String get resolverKey => '${resolverType.wireName}|$address';
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'address': address,
-        'name': name,
-        'region': region,
-        'provider': provider,
-        'resolverType': resolverType.wireName,
-        'bootstrapAddress': bootstrapAddress,
-        'group': group,
-        'isPreset': isPreset,
-        'isWorking': isWorking,
-        'lastTested': lastTested?.toIso8601String(),
-        'lastLatencyMs': lastLatencyMs,
-        'lastTestMessage': lastTestMessage,
-      };
+    'id': id,
+    'address': address,
+    'name': name,
+    'region': region,
+    'provider': provider,
+    'resolverType': resolverType.wireName,
+    'bootstrapAddress': bootstrapAddress,
+    'group': group,
+    'isPreset': isPreset,
+    'isWorking': isWorking,
+    'lastTested': lastTested?.toIso8601String(),
+    'lastLatencyMs': lastLatencyMs,
+    'lastTestMessage': lastTestMessage,
+  };
 
   factory DnsServer.fromJson(Map<String, dynamic> json) {
     final resolverType = DnsResolverTypeWire.fromWireName(
@@ -112,7 +112,8 @@ class DnsServer {
     );
     final address = json['address'] as String;
     final bootstrapAddress =
-        (json['bootstrapAddress'] as String?) ?? (resolverType == DnsResolverType.udp ? address : null);
+        (json['bootstrapAddress'] as String?) ??
+        (resolverType == DnsResolverType.udp ? address : null);
 
     return DnsServer(
       id: json['id'] as String?,
