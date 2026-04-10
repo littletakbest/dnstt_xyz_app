@@ -15,13 +15,13 @@ class AppLogEntry {
   const AppLogEntry({required this.timestamp, required this.message});
 
   String get timestampLabel {
-    final year = timestamp.year.toString().padLeft(4, '0');
     final month = timestamp.month.toString().padLeft(2, '0');
     final day = timestamp.day.toString().padLeft(2, '0');
     final hour = timestamp.hour.toString().padLeft(2, '0');
     final minute = timestamp.minute.toString().padLeft(2, '0');
     final second = timestamp.second.toString().padLeft(2, '0');
-    return '$year-$month-$day $hour:$minute:$second';
+    final millisecond = timestamp.millisecond.toString().padLeft(3, '0');
+    return '$month-$day $hour:$minute:$second.$millisecond';
   }
 }
 
@@ -496,14 +496,16 @@ class AppState extends ChangeNotifier {
 
       if (resolver != null &&
           (resolver.isUdpResolver || resolver.isSystemResolver)) {
-        return '$baseMessage Try a DoH/DoT preset or another DNS provider.';
+        return '$baseMessage Try a DoH/DoT preset or another DNS provider. '
+            'Details: $rawError';
       }
-      return baseMessage;
+      return '$baseMessage Details: $rawError';
     }
 
     if (lower.contains('tunnel verification failed')) {
       return 'The tunnel started but traffic verification failed. '
-          'Check the tunnel domain/public key and try another DNS preset if needed.';
+          'Check the tunnel domain/public key and try another DNS preset if needed. '
+          'Details: $rawError';
     }
 
     return rawError;

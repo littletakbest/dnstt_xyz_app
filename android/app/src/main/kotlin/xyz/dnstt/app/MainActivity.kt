@@ -914,6 +914,7 @@ class MainActivity : FlutterActivity() {
         Log.d("DnsttSsh", "Starting SSH tunnel mode")
 
         proxyScope.launch {
+            var failureStage = "dns_tunnel_start"
             try {
                 // Step 1: Start DNSTT proxy on internal port 7001 (creates tunnel to SSH server)
                 val listenAddr = "127.0.0.1:7001"
@@ -925,6 +926,7 @@ class MainActivity : FlutterActivity() {
                 delay(500)
 
                 // Step 2: Connect SSH client through DNSTT tunnel, SOCKS5 on port 1080
+                failureStage = "ssh_connect"
                 sshTunnelClient = SshTunnelClient()
                 val sshConnected = sshTunnelClient?.connect(
                     username = sshUsername,
@@ -952,11 +954,18 @@ class MainActivity : FlutterActivity() {
 
                     runOnUiThread {
                         eventSink?.success("ssh_tunnel_error")
-                        result.success(false)
+                        result.error("SSH_TUNNEL_ERROR", error, null)
                     }
                 }
             } catch (e: Exception) {
-                Log.e("DnsttSsh", "Failed to start SSH tunnel: ${e.message}", e)
+                val error = buildSshFailureMessage(
+                    failureStage,
+                    resolverDisplayName,
+                    dnsServer,
+                    tunnelDomain,
+                    e.message
+                )
+                Log.e("DnsttSsh", error, e)
 
                 // Clean up
                 try {
@@ -969,7 +978,7 @@ class MainActivity : FlutterActivity() {
 
                 runOnUiThread {
                     eventSink?.success("ssh_tunnel_error")
-                    result.success(false)
+                    result.error("SSH_TUNNEL_ERROR", error, null)
                 }
             }
         }
@@ -1123,6 +1132,7 @@ class MainActivity : FlutterActivity() {
         Log.d("DnsttSsh", "Starting SSH tunnel with VPN mode")
 
         proxyScope.launch {
+            var failureStage = "dns_tunnel_start"
             try {
                 // Step 1: Start DNSTT proxy on internal port 7001
                 val listenAddr = "127.0.0.1:7001"
@@ -1133,6 +1143,7 @@ class MainActivity : FlutterActivity() {
                 delay(500)
 
                 // Step 2: Connect SSH client, which exposes a local SOCKS5 proxy on port 1080
+                failureStage = "ssh_connect"
                 sshTunnelClient = SshTunnelClient()
                 val sshConnected = sshTunnelClient?.connect(
                     username = sshUsername,
@@ -1169,11 +1180,18 @@ class MainActivity : FlutterActivity() {
 
                     runOnUiThread {
                         eventSink?.success("ssh_tunnel_error")
-                        result.success(false)
+                        result.error("SSH_TUNNEL_ERROR", error, null)
                     }
                 }
             } catch (e: Exception) {
-                Log.e("DnsttSsh", "Failed to start SSH tunnel with VPN: ${e.message}", e)
+                val error = buildSshFailureMessage(
+                    failureStage,
+                    resolverDisplayName,
+                    dnsServer,
+                    tunnelDomain,
+                    e.message
+                )
+                Log.e("DnsttSsh", error, e)
 
                 try { sshDnsttClient?.stop() } catch (_: Exception) {}
                 sshDnsttClient = null
@@ -1183,9 +1201,27 @@ class MainActivity : FlutterActivity() {
 
                 runOnUiThread {
                     eventSink?.success("ssh_tunnel_error")
-                    result.success(false)
+                    result.error("SSH_TUNNEL_ERROR", error, null)
                 }
             }
+        }
+    }
+
+    private fun buildSshFailureMessage(
+        stage: String,
+        resolverDisplayName: String,
+        dnsServer: String,
+        tunnelDomain: String,
+        rawMessage: String?
+    ): String {
+        val detail = rawMessage?.takeIf { it.isNotBlank() } ?: "unknown error"
+        return when (stage) {
+            "dns_tunnel_start" ->
+                "DNS connection failed while starting the DNSTT tunnel through $resolverDisplayName ($dnsServer) for $tunnelDomain: $detail"
+            "ssh_connect" ->
+                "SSH connection failed: $detail"
+            else ->
+                "SSH tunnel setup failed: $detail"
         }
     }
 

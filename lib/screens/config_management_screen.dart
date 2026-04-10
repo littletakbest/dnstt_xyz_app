@@ -174,8 +174,10 @@ class ConfigManagementScreen extends StatelessWidget {
                                     children: [
                                       Icon(Icons.delete, color: Colors.red),
                                       SizedBox(width: 8),
-                                      Text('Delete',
-                                          style: TextStyle(color: Colors.red)),
+                                      Text(
+                                        'Delete',
+                                        style: TextStyle(color: Colors.red),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -216,7 +218,10 @@ class ConfigManagementScreen extends StatelessWidget {
                                     ),
                                   ),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: config.tunnelType == TunnelType.ssh
                                           ? Colors.purple[100]
@@ -224,11 +229,14 @@ class ConfigManagementScreen extends StatelessWidget {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Text(
-                                      config.tunnelType == TunnelType.ssh ? 'SSH' : 'Socks',
+                                      config.tunnelType == TunnelType.ssh
+                                          ? 'SSH'
+                                          : 'Socks',
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
-                                        color: config.tunnelType == TunnelType.ssh
+                                        color:
+                                            config.tunnelType == TunnelType.ssh
                                             ? Colors.purple[700]
                                             : Colors.blue[700],
                                       ),
@@ -236,7 +244,10 @@ class ConfigManagementScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: config.isSlipstream
                                           ? Colors.orange[100]
@@ -244,7 +255,9 @@ class ConfigManagementScreen extends StatelessWidget {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Text(
-                                      config.isSlipstream ? 'Slipstream' : 'DNSTT',
+                                      config.isSlipstream
+                                          ? 'Slipstream'
+                                          : 'DNSTT',
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -277,16 +290,10 @@ class ConfigManagementScreen extends StatelessWidget {
       children: [
         SizedBox(
           width: 80,
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.grey),
-          ),
+          child: Text(label, style: const TextStyle(color: Colors.grey)),
         ),
         Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontFamily: 'monospace'),
-          ),
+          child: Text(value, style: const TextStyle(fontFamily: 'monospace')),
         ),
       ],
     );
@@ -400,14 +407,17 @@ class ConfigManagementScreen extends StatelessWidget {
               );
 
               try {
-                final configs = await ConfigImportExportService.importConfigsFromUrl(url);
+                final configs =
+                    await ConfigImportExportService.importConfigsFromUrl(url);
 
                 if (context.mounted) {
                   Navigator.pop(context); // Close loading dialog
 
                   if (configs.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('No valid configs found in URL')),
+                      const SnackBar(
+                        content: Text('No valid configs found in URL'),
+                      ),
                     );
                     return;
                   }
@@ -418,7 +428,8 @@ class ConfigManagementScreen extends StatelessWidget {
                   if (context.mounted) {
                     String message;
                     if (result.added > 0 && result.updated > 0) {
-                      message = 'Added ${result.added} new configs, updated ${result.updated}';
+                      message =
+                          'Added ${result.added} new configs, updated ${result.updated}';
                     } else if (result.added > 0) {
                       message = 'Imported ${result.added} new configs';
                     } else if (result.updated > 0) {
@@ -428,7 +439,10 @@ class ConfigManagementScreen extends StatelessWidget {
                     }
 
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(message), backgroundColor: Colors.green),
+                      SnackBar(
+                        content: Text(message),
+                        backgroundColor: Colors.green,
+                      ),
                     );
                   }
                 }
@@ -459,9 +473,9 @@ class ConfigManagementScreen extends StatelessWidget {
 
       if (text == null || text.isEmpty) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Clipboard is empty')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Clipboard is empty')));
         }
         return;
       }
@@ -486,7 +500,8 @@ class ConfigManagementScreen extends StatelessWidget {
       if (context.mounted) {
         String message;
         if (result.added > 0 && result.updated > 0) {
-          message = 'Added ${result.added} new configs, updated ${result.updated}';
+          message =
+              'Added ${result.added} new configs, updated ${result.updated}';
         } else if (result.added > 0) {
           message = 'Imported ${result.added} new configs';
         } else if (result.updated > 0) {
@@ -516,13 +531,15 @@ class ConfigManagementScreen extends StatelessWidget {
     final state = context.read<AppState>();
 
     if (state.dnsttConfigs.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No configs to export')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No configs to export')));
       return;
     }
 
-    final jsonString = ConfigImportExportService.exportConfigsToJson(state.dnsttConfigs);
+    final jsonString = ConfigImportExportService.exportConfigsToJson(
+      state.dnsttConfigs,
+    );
 
     // On desktop, directly open native save dialog
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
@@ -544,7 +561,10 @@ class ConfigManagementScreen extends StatelessWidget {
             children: [
               Text(
                 'Export ${state.dnsttConfigs.length} Configs',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 16),
               ListTile(
@@ -553,7 +573,12 @@ class ConfigManagementScreen extends StatelessWidget {
                 subtitle: const Text('Send via apps, AirDrop, etc.'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _shareJsonFile(context, jsonString, 'dnstt_configs.json', 'DNSTT Configs');
+                  _shareJsonFile(
+                    context,
+                    jsonString,
+                    'dnstt_configs.json',
+                    'DNSTT Configs',
+                  );
                 },
               ),
               ListTile(
@@ -572,7 +597,12 @@ class ConfigManagementScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _shareJsonFile(BuildContext context, String jsonString, String fileName, String subject) async {
+  Future<void> _shareJsonFile(
+    BuildContext context,
+    String jsonString,
+    String fileName,
+    String subject,
+  ) async {
     try {
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/$fileName');
@@ -589,15 +619,23 @@ class ConfigManagementScreen extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to share: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed to share: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
 
-  Future<void> _saveJsonFile(BuildContext context, String jsonString, String fileName) async {
+  Future<void> _saveJsonFile(
+    BuildContext context,
+    String jsonString,
+    String fileName,
+  ) async {
     try {
-      final isDesktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+      final isDesktop =
+          Platform.isMacOS || Platform.isWindows || Platform.isLinux;
       final bytes = utf8.encode(jsonString);
 
       final result = await FilePicker.platform.saveFile(
@@ -614,14 +652,20 @@ class ConfigManagementScreen extends StatelessWidget {
         }
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Saved to file'), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text('Saved to file'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed to save: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -657,7 +701,9 @@ class ConfigManagementScreen extends StatelessWidget {
 
         if (result.configs.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No configs found in the curated list')),
+            const SnackBar(
+              content: Text('No configs found in the curated list'),
+            ),
           );
           return;
         }
@@ -717,7 +763,9 @@ class ConfigManagementScreen extends StatelessWidget {
         throw Exception('Could not read file');
       }
 
-      final configs = ConfigImportExportService.importConfigsFromJson(jsonString);
+      final configs = ConfigImportExportService.importConfigsFromJson(
+        jsonString,
+      );
 
       if (configs.isEmpty) {
         if (context.mounted) {
@@ -737,7 +785,8 @@ class ConfigManagementScreen extends StatelessWidget {
       if (context.mounted) {
         String message;
         if (importResult.added > 0 && importResult.updated > 0) {
-          message = 'Added ${importResult.added} new configs, updated ${importResult.updated}';
+          message =
+              'Added ${importResult.added} new configs, updated ${importResult.updated}';
         } else if (importResult.added > 0) {
           message = 'Imported ${importResult.added} new configs';
         } else if (importResult.updated > 0) {
@@ -783,6 +832,7 @@ class _ConfigDialogState extends State<_ConfigDialog> {
   late TextEditingController domainController;
   late TextEditingController sshUsernameController;
   late TextEditingController sshPasswordController;
+  late TextEditingController sshPrivateKeyController;
 
   late TunnelType selectedTunnelType;
   late TransportType selectedTransportType;
@@ -794,14 +844,29 @@ class _ConfigDialogState extends State<_ConfigDialog> {
   @override
   void initState() {
     super.initState();
-    nameController = TextEditingController(text: widget.existingConfig?.name ?? '');
-    publicKeyController = TextEditingController(text: widget.existingConfig?.publicKey ?? '');
-    domainController = TextEditingController(text: widget.existingConfig?.tunnelDomain ?? '');
-    sshUsernameController = TextEditingController(text: widget.existingConfig?.sshUsername ?? '');
-    sshPasswordController = TextEditingController(text: widget.existingConfig?.sshPassword ?? '');
+    nameController = TextEditingController(
+      text: widget.existingConfig?.name ?? '',
+    );
+    publicKeyController = TextEditingController(
+      text: widget.existingConfig?.publicKey ?? '',
+    );
+    domainController = TextEditingController(
+      text: widget.existingConfig?.tunnelDomain ?? '',
+    );
+    sshUsernameController = TextEditingController(
+      text: widget.existingConfig?.sshUsername ?? '',
+    );
+    sshPasswordController = TextEditingController(
+      text: widget.existingConfig?.sshPassword ?? '',
+    );
+    sshPrivateKeyController = TextEditingController(
+      text: widget.existingConfig?.sshPrivateKey ?? '',
+    );
     selectedTunnelType = widget.existingConfig?.tunnelType ?? TunnelType.socks5;
-    selectedTransportType = widget.existingConfig?.transportType ?? TransportType.dnstt;
-    selectedCongestionControl = widget.existingConfig?.congestionControl ?? 'dcubic';
+    selectedTransportType =
+        widget.existingConfig?.transportType ?? TransportType.dnstt;
+    selectedCongestionControl =
+        widget.existingConfig?.congestionControl ?? 'dcubic';
     keepAliveInterval = widget.existingConfig?.keepAliveInterval ?? 400;
     gsoEnabled = widget.existingConfig?.gsoEnabled ?? false;
   }
@@ -813,6 +878,7 @@ class _ConfigDialogState extends State<_ConfigDialog> {
     domainController.dispose();
     sshUsernameController.dispose();
     sshPasswordController.dispose();
+    sshPrivateKeyController.dispose();
     super.dispose();
   }
 
@@ -845,14 +911,18 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                 _buildTypeTag(
                   label: 'DNSTT',
                   isSelected: selectedTransportType == TransportType.dnstt,
-                  onTap: () => setState(() => selectedTransportType = TransportType.dnstt),
+                  onTap: () => setState(
+                    () => selectedTransportType = TransportType.dnstt,
+                  ),
                   color: Colors.teal,
                 ),
                 const SizedBox(width: 8),
                 _buildTypeTag(
                   label: 'Slipstream',
                   isSelected: selectedTransportType == TransportType.slipstream,
-                  onTap: () => setState(() => selectedTransportType = TransportType.slipstream),
+                  onTap: () => setState(
+                    () => selectedTransportType = TransportType.slipstream,
+                  ),
                   color: Colors.orange,
                 ),
               ],
@@ -896,7 +966,10 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                   border: OutlineInputBorder(),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'dcubic', child: Text('DCubic (default)')),
+                  DropdownMenuItem(
+                    value: 'dcubic',
+                    child: Text('DCubic (default)'),
+                  ),
                   DropdownMenuItem(value: 'bbr', child: Text('BBR')),
                 ],
                 onChanged: (value) {
@@ -910,7 +983,9 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                 children: [
                   Expanded(
                     child: TextField(
-                      controller: TextEditingController(text: keepAliveInterval.toString()),
+                      controller: TextEditingController(
+                        text: keepAliveInterval.toString(),
+                      ),
                       decoration: const InputDecoration(
                         labelText: 'Keep Alive (ms)',
                         border: OutlineInputBorder(),
@@ -947,13 +1022,15 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                 _buildTypeTag(
                   label: 'Socks',
                   isSelected: selectedTunnelType == TunnelType.socks5,
-                  onTap: () => setState(() => selectedTunnelType = TunnelType.socks5),
+                  onTap: () =>
+                      setState(() => selectedTunnelType = TunnelType.socks5),
                 ),
                 const SizedBox(width: 8),
                 _buildTypeTag(
                   label: 'SSH',
                   isSelected: selectedTunnelType == TunnelType.ssh,
-                  onTap: () => setState(() => selectedTunnelType = TunnelType.ssh),
+                  onTap: () =>
+                      setState(() => selectedTunnelType = TunnelType.ssh),
                 ),
               ],
             ),
@@ -978,17 +1055,55 @@ class _ConfigDialogState extends State<_ConfigDialog> {
               TextField(
                 controller: sshPasswordController,
                 decoration: InputDecoration(
-                  labelText: 'SSH Password',
-                  hintText: 'Your SSH password',
+                  labelText: 'SSH Password (Optional)',
+                  hintText: 'Use this or a private key',
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: Icon(showPassword ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () => setState(() => showPassword = !showPassword),
+                    icon: Icon(
+                      showPassword ? Icons.visibility_off : Icons.visibility,
+                    ),
+                    onPressed: () =>
+                        setState(() => showPassword = !showPassword),
                   ),
                 ),
                 obscureText: !showPassword,
                 autocorrect: false,
                 enableSuggestions: false,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'You can authenticate with either a password or an SSH private key.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _importSshPrivateKeyFile,
+                  icon: const Icon(Icons.file_open),
+                  label: Text(
+                    Platform.isAndroid
+                        ? 'Import Key File'
+                        : 'Import Key File',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: sshPrivateKeyController,
+                decoration: const InputDecoration(
+                  labelText: 'SSH Private Key (Optional)',
+                  hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
+                  helperText:
+                      'Paste the full private key or import it from a file.',
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+                maxLines: 8,
+                minLines: 6,
+                autocorrect: false,
+                enableSuggestions: false,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               ),
             ],
           ],
@@ -1033,6 +1148,57 @@ class _ConfigDialogState extends State<_ConfigDialog> {
     );
   }
 
+  Future<void> _importSshPrivateKeyFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: 'Select SSH private key',
+        type: FileType.any,
+        allowMultiple: false,
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      String keyText;
+
+      if (file.bytes != null) {
+        keyText = utf8.decode(file.bytes!, allowMalformed: true);
+      } else if (file.path != null) {
+        keyText = await File(file.path!).readAsString();
+      } else {
+        throw Exception('Could not read the selected file');
+      }
+
+      final normalizedKey = keyText.trim();
+      if (normalizedKey.isEmpty) {
+        throw Exception('The selected file is empty');
+      }
+
+      sshPrivateKeyController.text = normalizedKey;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Platform.isAndroid
+                ? 'SSH private key imported'
+                : 'SSH private key imported',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to import SSH private key: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _saveConfig() {
     final name = nameController.text.trim();
     final publicKey = publicKeyController.text.trim();
@@ -1065,7 +1231,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
     // Validate SSH settings if SSH type selected
     if (selectedTunnelType == TunnelType.ssh) {
       final sshUsername = sshUsernameController.text.trim();
-      final sshPassword = sshPasswordController.text;
+      final sshPassword = sshPasswordController.text.trim();
+      final sshPrivateKey = sshPrivateKeyController.text.trim();
 
       if (sshUsername.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1074,9 +1241,20 @@ class _ConfigDialogState extends State<_ConfigDialog> {
         return;
       }
 
-      if (sshPassword.isEmpty) {
+      if (sshPassword.isEmpty && sshPrivateKey.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter SSH password')),
+          const SnackBar(
+            content: Text('Please enter an SSH password or private key'),
+          ),
+        );
+        return;
+      }
+
+      if (sshPrivateKey.isNotEmpty &&
+          (!sshPrivateKey.contains('BEGIN') ||
+              !sshPrivateKey.contains('PRIVATE KEY'))) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('SSH private key does not look valid')),
         );
         return;
       }
@@ -1085,31 +1263,43 @@ class _ConfigDialogState extends State<_ConfigDialog> {
     final state = context.read<AppState>();
 
     if (widget.existingConfig == null) {
-      state.addDnsttConfig(DnsttConfig(
-        name: name,
-        publicKey: selectedTransportType == TransportType.dnstt ? publicKey : '',
-        tunnelDomain: domain,
-        tunnelType: selectedTunnelType,
-        transportType: selectedTransportType,
-        sshUsername: selectedTunnelType == TunnelType.ssh
-            ? sshUsernameController.text.trim()
-            : null,
-        sshPassword: selectedTunnelType == TunnelType.ssh
-            ? sshPasswordController.text
-            : null,
-        congestionControl: selectedTransportType == TransportType.slipstream
-            ? selectedCongestionControl
-            : null,
-        keepAliveInterval: selectedTransportType == TransportType.slipstream
-            ? keepAliveInterval
-            : null,
-        gsoEnabled: selectedTransportType == TransportType.slipstream
-            ? gsoEnabled
-            : null,
-      ));
+      state.addDnsttConfig(
+        DnsttConfig(
+          name: name,
+          publicKey: selectedTransportType == TransportType.dnstt
+              ? publicKey
+              : '',
+          tunnelDomain: domain,
+          tunnelType: selectedTunnelType,
+          transportType: selectedTransportType,
+          sshUsername: selectedTunnelType == TunnelType.ssh
+              ? sshUsernameController.text.trim()
+              : null,
+          sshPassword: selectedTunnelType == TunnelType.ssh
+              ? (sshPasswordController.text.trim().isEmpty
+                    ? null
+                    : sshPasswordController.text)
+              : null,
+          sshPrivateKey: selectedTunnelType == TunnelType.ssh
+              ? (sshPrivateKeyController.text.trim().isEmpty
+                    ? null
+                    : sshPrivateKeyController.text.trim())
+              : null,
+          congestionControl: selectedTransportType == TransportType.slipstream
+              ? selectedCongestionControl
+              : null,
+          keepAliveInterval: selectedTransportType == TransportType.slipstream
+              ? keepAliveInterval
+              : null,
+          gsoEnabled: selectedTransportType == TransportType.slipstream
+              ? gsoEnabled
+              : null,
+        ),
+      );
     } else {
       widget.existingConfig!.name = name;
-      widget.existingConfig!.publicKey = selectedTransportType == TransportType.dnstt ? publicKey : '';
+      widget.existingConfig!.publicKey =
+          selectedTransportType == TransportType.dnstt ? publicKey : '';
       widget.existingConfig!.tunnelDomain = domain;
       widget.existingConfig!.tunnelType = selectedTunnelType;
       widget.existingConfig!.transportType = selectedTransportType;
@@ -1117,24 +1307,35 @@ class _ConfigDialogState extends State<_ConfigDialog> {
           ? sshUsernameController.text.trim()
           : null;
       widget.existingConfig!.sshPassword = selectedTunnelType == TunnelType.ssh
-          ? sshPasswordController.text
+          ? (sshPasswordController.text.trim().isEmpty
+                ? null
+                : sshPasswordController.text)
           : null;
-      widget.existingConfig!.congestionControl = selectedTransportType == TransportType.slipstream
+      widget.existingConfig!.sshPrivateKey =
+          selectedTunnelType == TunnelType.ssh
+          ? (sshPrivateKeyController.text.trim().isEmpty
+                ? null
+                : sshPrivateKeyController.text.trim())
+          : null;
+      widget.existingConfig!.congestionControl =
+          selectedTransportType == TransportType.slipstream
           ? selectedCongestionControl
           : null;
-      widget.existingConfig!.keepAliveInterval = selectedTransportType == TransportType.slipstream
+      widget.existingConfig!.keepAliveInterval =
+          selectedTransportType == TransportType.slipstream
           ? keepAliveInterval
           : null;
-      widget.existingConfig!.gsoEnabled = selectedTransportType == TransportType.slipstream
-          ? gsoEnabled
-          : null;
+      widget.existingConfig!.gsoEnabled =
+          selectedTransportType == TransportType.slipstream ? gsoEnabled : null;
       state.updateDnsttConfig(widget.existingConfig!);
     }
 
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(widget.existingConfig == null ? 'Config added' : 'Config updated'),
+        content: Text(
+          widget.existingConfig == null ? 'Config added' : 'Config updated',
+        ),
       ),
     );
   }

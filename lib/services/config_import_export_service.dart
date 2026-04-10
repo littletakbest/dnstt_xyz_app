@@ -19,13 +19,15 @@ class ConfigImportExportService {
   /// }
   static Future<List<DnsttConfig>> importConfigsFromUrl(String url) async {
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'DNSTT-Client/1.0',
-        },
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'DNSTT-Client/1.0',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200) {
         throw Exception('Failed to fetch configs: HTTP ${response.statusCode}');
@@ -44,7 +46,9 @@ class ConfigImportExportService {
         return _parseConfigList(configsList);
       }
 
-      throw Exception('Invalid JSON format. Expected array or object with "configs" field.');
+      throw Exception(
+        'Invalid JSON format. Expected array or object with "configs" field.',
+      );
     } catch (e) {
       throw Exception('Failed to import configs: $e');
     }
@@ -60,23 +64,30 @@ class ConfigImportExportService {
       try {
         // Parse transport type (dnstt or slipstream)
         TransportType transportType = TransportType.dnstt;
-        final transportStr = item['transportType']?.toString().toLowerCase() ?? 'dnstt';
+        final transportStr =
+            item['transportType']?.toString().toLowerCase() ?? 'dnstt';
         if (transportStr == 'slipstream') {
           transportType = TransportType.slipstream;
         }
 
         // Parse tunnel type (socks5 or ssh)
         TunnelType tunnelType = TunnelType.socks5;
-        final typeStr = item['tunnelType']?.toString().toLowerCase() ??
-                        item['type']?.toString().toLowerCase() ?? 'socks5';
+        final typeStr =
+            item['tunnelType']?.toString().toLowerCase() ??
+            item['type']?.toString().toLowerCase() ??
+            'socks5';
         if (typeStr == 'ssh') {
           tunnelType = TunnelType.ssh;
         }
 
         final config = DnsttConfig(
           name: item['name']?.toString() ?? 'Unnamed Config',
-          publicKey: item['publicKey']?.toString() ?? item['pubkey']?.toString() ?? '',
-          tunnelDomain: item['tunnelDomain']?.toString() ?? item['domain']?.toString() ?? '',
+          publicKey:
+              item['publicKey']?.toString() ?? item['pubkey']?.toString() ?? '',
+          tunnelDomain:
+              item['tunnelDomain']?.toString() ??
+              item['domain']?.toString() ??
+              '',
           transportType: transportType,
           tunnelType: tunnelType,
           sshUsername: item['sshUsername']?.toString(),
@@ -131,8 +142,8 @@ class ConfigImportExportService {
         final configMap = <String, dynamic>{
           'name': c.name,
           'tunnelDomain': c.tunnelDomain,
-          'transportType': c.transportType.name,  // dnstt or slipstream
-          'tunnelType': c.tunnelType.name,        // socks5 or ssh
+          'transportType': c.transportType.name, // dnstt or slipstream
+          'tunnelType': c.tunnelType.name, // socks5 or ssh
         };
 
         // DNSTT-specific fields
@@ -142,8 +153,10 @@ class ConfigImportExportService {
 
         // Slipstream-specific fields
         if (c.transportType == TransportType.slipstream) {
-          if (c.congestionControl != null) configMap['congestionControl'] = c.congestionControl;
-          if (c.keepAliveInterval != null) configMap['keepAliveInterval'] = c.keepAliveInterval;
+          if (c.congestionControl != null)
+            configMap['congestionControl'] = c.congestionControl;
+          if (c.keepAliveInterval != null)
+            configMap['keepAliveInterval'] = c.keepAliveInterval;
           if (c.gsoEnabled != null) configMap['gsoEnabled'] = c.gsoEnabled;
         }
 
@@ -151,6 +164,8 @@ class ConfigImportExportService {
         if (c.tunnelType == TunnelType.ssh) {
           if (c.sshUsername != null) configMap['sshUsername'] = c.sshUsername;
           if (c.sshPassword != null) configMap['sshPassword'] = c.sshPassword;
+          if (c.sshPrivateKey != null)
+            configMap['sshPrivateKey'] = c.sshPrivateKey;
         }
 
         return configMap;
@@ -162,17 +177,20 @@ class ConfigImportExportService {
 
   /// Fetch DNSTT servers from dnstt.xyz
   /// Returns a tuple of (configs, dnsServers)
-  static Future<({List<DnsttConfig> configs, List<DnsServer> dnsServers})> fetchDnsttXyzServers() async {
+  static Future<({List<DnsttConfig> configs, List<DnsServer> dnsServers})>
+  fetchDnsttXyzServers() async {
     const url = 'https://dnstt.xyz/servers/dnstt-servers.json';
 
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'DNSTT-Client/1.0',
-        },
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'DNSTT-Client/1.0',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200) {
         throw Exception('Failed to fetch servers: HTTP ${response.statusCode}');
@@ -214,11 +232,13 @@ class ConfigImportExportService {
                 final dnsIp = parts[1];
                 // Validate IP format
                 if (_isValidIp(dnsIp)) {
-                  dnsServers.add(DnsServer(
-                    address: dnsIp,
-                    name: '$name DNS',
-                    provider: 'littlednst',
-                  ));
+                  dnsServers.add(
+                    DnsServer(
+                      address: dnsIp,
+                      name: '$name DNS',
+                      provider: 'littlednst',
+                    ),
+                  );
                 }
               }
             }
@@ -262,12 +282,16 @@ class ConfigImportExportService {
   static String exportDnsServersToJson(List<DnsServer> servers) {
     final data = {
       'version': '1.0',
-      'servers': servers.map((s) => {
-        'ip': s.address,
-        if (s.name != null) 'name': s.name,
-        if (s.provider != null) 'provider': s.provider,
-        if (s.region != null) 'region': s.region,
-      }).toList(),
+      'servers': servers
+          .map(
+            (s) => {
+              'ip': s.address,
+              if (s.name != null) 'name': s.name,
+              if (s.provider != null) 'provider': s.provider,
+              if (s.region != null) 'region': s.region,
+            },
+          )
+          .toList(),
     };
 
     return const JsonEncoder.withIndent('  ').convert(data);
@@ -276,13 +300,15 @@ class ConfigImportExportService {
   /// Import DNS servers from a JSON URL
   static Future<List<DnsServer>> importDnsServersFromUrl(String url) async {
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'DNSTT-Client/1.0',
-        },
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'DNSTT-Client/1.0',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
@@ -311,11 +337,13 @@ class ConfigImportExportService {
       serversList = jsonData;
     }
     // Handle object format with servers array
-    else if (jsonData is Map<String, dynamic> && jsonData.containsKey('servers')) {
+    else if (jsonData is Map<String, dynamic> &&
+        jsonData.containsKey('servers')) {
       serversList = jsonData['servers'] as List;
-    }
-    else {
-      throw Exception('Invalid JSON format. Expected array or object with "servers" field.');
+    } else {
+      throw Exception(
+        'Invalid JSON format. Expected array or object with "servers" field.',
+      );
     }
 
     for (final item in serversList) {
@@ -325,12 +353,14 @@ class ConfigImportExportService {
         final ip = item['ip']?.toString() ?? item['address']?.toString() ?? '';
         if (ip.isEmpty || !_isValidIp(ip)) continue;
 
-        servers.add(DnsServer(
-          address: ip,
-          name: item['name']?.toString(),
-          provider: item['provider']?.toString(),
-          region: item['region']?.toString(),
-        ));
+        servers.add(
+          DnsServer(
+            address: ip,
+            name: item['name']?.toString(),
+            provider: item['provider']?.toString(),
+            region: item['region']?.toString(),
+          ),
+        );
       } catch (e) {
         // Skip invalid entries
         continue;

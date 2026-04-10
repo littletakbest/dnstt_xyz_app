@@ -71,14 +71,25 @@ class SshTunnelClient {
             Log.i(TAG, "Connecting SSH through DNSTT tunnel at $DNSTT_TUNNEL_HOST:$DNSTT_TUNNEL_PORT")
 
             val jsch = JSch()
+            val trimmedPassword = password?.takeIf { it.isNotBlank() }
+            val trimmedPrivateKey = privateKey?.trim()?.takeIf { it.isNotEmpty() }
+            val usingPasswordAuth = trimmedPassword != null
+            val usingPrivateKeyAuth = trimmedPrivateKey != null
 
             // Add private key if provided
-            if (!privateKey.isNullOrEmpty()) {
+            if (usingPrivateKeyAuth) {
                 try {
-                    jsch.addIdentity("dnstt_key", privateKey.toByteArray(), null, null)
+                    jsch.addIdentity(
+                        "dnstt_key",
+                        trimmedPrivateKey!!.toByteArray(Charsets.UTF_8),
+                        null,
+                        null
+                    )
                     Log.d(TAG, "Added SSH private key")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to add private key: ${e.message}")
+                    lastError = "Invalid SSH private key: ${e.message ?: "unknown error"}"
+                    Log.e(TAG, lastError!!, e)
+                    return@withContext false
                 }
             }
 
@@ -86,14 +97,23 @@ class SshTunnelClient {
             // The DNSTT tunnel (127.0.0.1:7000) forwards to the SSH server
             session = jsch.getSession(username, DNSTT_TUNNEL_HOST, DNSTT_TUNNEL_PORT).apply {
                 // Set password if provided
-                if (!password.isNullOrEmpty()) {
-                    setPassword(password)
+                if (usingPasswordAuth) {
+                    setPassword(trimmedPassword)
                 }
 
                 // Configure session
                 val config = Properties().apply {
                     put("StrictHostKeyChecking", "no")
-                    put("PreferredAuthentications", "publickey,password,keyboard-interactive")
+                    put(
+                        "PreferredAuthentications",
+                        when {
+                            usingPrivateKeyAuth && usingPasswordAuth ->
+                                "publickey,password,keyboard-interactive"
+                            usingPrivateKeyAuth -> "publickey"
+                            usingPasswordAuth -> "password,keyboard-interactive"
+                            else -> "publickey,password,keyboard-interactive"
+                        }
+                    )
                     put("compression.s2c", "none")
                     put("compression.c2s", "none")
                 }
