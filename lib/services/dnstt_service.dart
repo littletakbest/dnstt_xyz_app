@@ -18,12 +18,14 @@ class TunnelTestResult {
   final String? message;
   final Duration? latency;
   final int? statusCode;
+  final String? responseBody;
 
   TunnelTestResult({
     required this.result,
     this.message,
     this.latency,
     this.statusCode,
+    this.responseBody,
   });
 }
 
@@ -1292,6 +1294,7 @@ class DnsttService {
       final request = await client.getUrl(Uri.parse(testUrl)).timeout(timeout);
       request.headers.set('Connection', 'close');
       final response = await request.close().timeout(timeout);
+      final responseBody = await response.transform(utf8.decoder).join();
       stopwatch.stop();
       client.close(force: true);
 
@@ -1302,6 +1305,7 @@ class DnsttService {
         message: 'HTTP ${response.statusCode}',
         latency: stopwatch.elapsed,
         statusCode: response.statusCode,
+        responseBody: responseBody,
       );
     } on TimeoutException {
       client.close(force: true);

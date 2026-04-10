@@ -2,11 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:socks5_proxy/socks_client.dart';
 
-/// Manages the slipstream-client binary as a subprocess on desktop platforms.
-/// Slipstream uses QUIC-over-DNS and is significantly faster than DNSTT.
-///
-/// The slipstream-client binary provides a local SOCKS5 proxy, same as DNSTT.
-/// DNS resolvers come from the DNS server list (same as DNSTT).
+
 class SlipstreamService {
   static SlipstreamService? _instance;
   static SlipstreamService get instance => _instance ??= SlipstreamService._();
@@ -76,8 +72,7 @@ class SlipstreamService {
     return 'slipstream-client';
   }
 
-  /// Start the slipstream-client subprocess.
-  ///
+
   /// [domain] - Tunnel domain (e.g., "tunnel.example.com")
   /// [dnsServerAddr] - Raw resolver host or host:port used for bootstrap DNS
   /// [listenPort] - Local SOCKS5 proxy port (default 7000)
@@ -250,16 +245,13 @@ class SlipstreamService {
       );
       testProcess = await Process.start(binaryPath, args);
 
-      // Capture stderr for debugging
       final stderrBuffer = StringBuffer();
       testProcess.stderr.listen((data) {
         stderrBuffer.write(String.fromCharCodes(data));
       });
 
-      // Wait for the proxy to be ready
       await Future.delayed(const Duration(seconds: 2));
 
-      // Check if process is still running
       final checkResult = await Future.any([
         testProcess.exitCode.then((code) => 'exited:$code'),
         Future.delayed(const Duration(milliseconds: 300), () => 'running'),
@@ -273,7 +265,6 @@ class SlipstreamService {
         return -1;
       }
 
-      // Make HTTP/HTTPS request through SOCKS5 proxy
       final stopwatch = Stopwatch()..start();
       final client = HttpClient();
       client.connectionTimeout = Duration(milliseconds: timeoutMs);
@@ -318,7 +309,6 @@ class SlipstreamService {
     } finally {
       if (testProcess != null) {
         testProcess.kill();
-        // Wait for process to actually exit so the port is released
         await testProcess.exitCode.timeout(
           const Duration(seconds: 2),
           onTimeout: () {

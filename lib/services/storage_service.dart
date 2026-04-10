@@ -14,6 +14,7 @@ class StorageService {
   static const String _useAutoDnsKey = 'use_auto_dns';
   static const String _strictDnsModeKey = 'strict_dns_mode';
   static const String _strictDnsFallbackDnsKey = 'strict_dns_fallback_dns';
+  static const String _showTunnelIpOnHomeKey = 'show_tunnel_ip_on_home';
   static const int defaultProxyPort = 1080;
 
   final SharedPreferences _prefs;
@@ -165,6 +166,13 @@ class StorageService {
     } else {
       await _prefs.setString(_strictDnsFallbackDnsKey, id);
     }
+  }
+
+  Future<bool> getShowTunnelIpOnHome() async =>
+      _prefs.getBool(_showTunnelIpOnHomeKey) ?? true;
+
+  Future<void> setShowTunnelIpOnHome(bool value) async {
+    await _prefs.setBool(_showTunnelIpOnHomeKey, value);
   }
 
   // Auto DNS

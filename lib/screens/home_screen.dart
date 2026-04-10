@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/app_state.dart';
+import '../services/dnstt_service.dart';
 import '../services/vpn_service.dart';
 import '../models/dnstt_config.dart';
 import 'dns_management_screen.dart';
@@ -22,6 +24,10 @@ enum ConnectionMode { vpn, proxy }
 class _HomeScreenState extends State<HomeScreen> {
   final VpnService _vpnService = VpnService();
   ConnectionMode _connectionMode = ConnectionMode.vpn;
+  int? _connectedPingMs;
+  String? _connectedIp;
+  bool _isRefreshingTunnelInfo = false;
+  int _tunnelInfoRequestId = 0;
 
   @override
   void initState() {
@@ -43,19 +49,100 @@ class _HomeScreenState extends State<HomeScreen> {
           break;
         case VpnState.connected:
           appState.setConnectionStatus(ConnectionStatus.connected);
+          _refreshTunnelInfo(appState);
           break;
         case VpnState.disconnected:
         case VpnState.disconnecting:
           appState.setConnectionStatus(ConnectionStatus.disconnected);
+          _clearTunnelInfo();
           break;
         case VpnState.error:
           appState.setConnectionStatus(
             ConnectionStatus.error,
             appState.describeConnectionFailure(_vpnService.lastError),
           );
+          _clearTunnelInfo();
           break;
       }
     });
+  }
+
+  void _clearTunnelInfo() {
+    if (!mounted) return;
+    setState(() {
+      _connectedPingMs = null;
+      _connectedIp = null;
+      _isRefreshingTunnelInfo = false;
+    });
+  }
+
+  Future<void> _refreshTunnelInfo(AppState state) async {
+    final requestId = ++_tunnelInfoRequestId;
+    if (mounted) {
+      setState(() {
+        _isRefreshingTunnelInfo = true;
+        _connectedPingMs = null;
+        _connectedIp = null;
+      });
+    }
+
+    try {
+      TunnelTestResult? result;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+        result = await DnsttService.testTunnelConnection(
+          'https://api.ipify.org?format=json',
+          proxyPort: state.proxyPort,
+          timeout: const Duration(seconds: 15),
+        );
+        if (result.result == TestResult.success) {
+          break;
+        }
+      }
+
+      if (!mounted || requestId != _tunnelInfoRequestId) return;
+
+      setState(() {
+        _isRefreshingTunnelInfo = false;
+        _connectedPingMs = result?.result == TestResult.success
+            ? result?.latency?.inMilliseconds
+            : null;
+        _connectedIp = result?.result == TestResult.success
+            ? _extractIpAddress(result?.responseBody)
+            : null;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _tunnelInfoRequestId) return;
+
+      setState(() {
+        _isRefreshingTunnelInfo = false;
+        _connectedPingMs = null;
+        _connectedIp = null;
+      });
+    }
+  }
+
+  String? _extractIpAddress(String? responseBody) {
+    if (responseBody == null || responseBody.trim().isEmpty) {
+      return null;
+    }
+
+    final trimmed = responseBody.trim();
+    try {
+      final decoded = json.decode(trimmed);
+      if (decoded is Map<String, dynamic>) {
+        final ip = decoded['ip'];
+        if (ip is String && ip.trim().isNotEmpty) {
+          return ip.trim();
+        }
+      }
+    } catch (_) {
+      // Accept plain text IP responses too.
+    }
+
+    return trimmed;
   }
 
   @override
@@ -311,6 +398,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(color: Colors.grey[500], fontSize: 11),
                 textAlign: TextAlign.center,
               ),
+            ],
+
+            if (isConnected) ...[
+              const SizedBox(height: 6),
+              Text(
+                'ping: ${_isRefreshingTunnelInfo ? 'checking...' : (_connectedPingMs != null ? '${_connectedPingMs}ms' : '-')}',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+              if (state.showTunnelIpOnHome)
+                Text(
+                  'ip: ${_isRefreshingTunnelInfo ? 'checking...' : (_connectedIp ?? '-')}',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
             ],
 
             if (state.connectionError != null) ...[
@@ -749,6 +851,21 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(
                 'Note: Change takes effect on next connection.',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Show Public IP On Main Page'),
+                subtitle: const Text(
+                  'Displays the tunnel public IP under the connected status.',
+                ),
+                value: state.showTunnelIpOnHome,
+                onChanged: (value) async {
+                  await state.setShowTunnelIpOnHome(value);
+                  if (stfContext.mounted) {
+                    setDialogState(() {});
+                  }
+                },
               ),
               if (Platform.isAndroid &&
                   _connectionMode == ConnectionMode.vpn) ...[

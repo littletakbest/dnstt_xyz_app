@@ -1082,9 +1082,7 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                   onPressed: _importSshPrivateKeyFile,
                   icon: const Icon(Icons.file_open),
                   label: Text(
-                    Platform.isAndroid
-                        ? 'Import Key File'
-                        : 'Import Key File',
+                    Platform.isAndroid ? 'Import Key File' : 'Import Key File',
                   ),
                 ),
               ),

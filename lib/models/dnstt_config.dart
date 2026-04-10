@@ -3,10 +3,7 @@ import 'package:uuid/uuid.dart';
 /// Transport type enumeration - the underlying tunnel protocol
 /// - dnstt: Original DNSTT protocol (DNS TXT + KCP + Noise)
 /// - slipstream: Slipstream protocol (QUIC-over-DNS, ~5x faster)
-enum TransportType {
-  dnstt,
-  slipstream,
-}
+enum TransportType { dnstt, slipstream }
 
 /// Tunnel type enumeration - what the server forwards to
 /// - socks5: Server configured to forward to SOCKS5 proxy (standard DNSTT)
@@ -17,10 +14,7 @@ enum TransportType {
 /// 2. App's SSH client connects through tunnel using credentials from config
 /// 3. SSH dynamic port forwarding creates local SOCKS5 proxy
 /// 4. User apps connect to the local SOCKS5 proxy (port configurable in settings)
-enum TunnelType {
-  socks5,
-  ssh,
-}
+enum TunnelType { socks5, ssh }
 
 class DnsttConfig {
   final String id;
@@ -43,8 +37,10 @@ class DnsttConfig {
   /// Slipstream-specific settings (only used when transportType is slipstream)
   /// Congestion control algorithm: "bbr" or "dcubic" (default: "dcubic")
   String? congestionControl;
+
   /// Keep-alive interval in milliseconds (default: 400)
   int? keepAliveInterval;
+
   /// Generic Segmentation Offload (default: false)
   bool? gsoEnabled;
 
@@ -64,34 +60,34 @@ class DnsttConfig {
   }) : id = id ?? const Uuid().v4();
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'publicKey': publicKey,
-        'tunnelDomain': tunnelDomain,
-        'transportType': transportType.name,
-        'tunnelType': tunnelType.name,
-        'sshUsername': sshUsername,
-        'sshPassword': sshPassword,
-        'sshPrivateKey': sshPrivateKey,
-        'congestionControl': congestionControl,
-        'keepAliveInterval': keepAliveInterval,
-        'gsoEnabled': gsoEnabled,
-      };
+    'id': id,
+    'name': name,
+    'publicKey': publicKey,
+    'tunnelDomain': tunnelDomain,
+    'transportType': transportType.name,
+    'tunnelType': tunnelType.name,
+    'sshUsername': sshUsername,
+    'sshPassword': sshPassword,
+    'sshPrivateKey': sshPrivateKey,
+    'congestionControl': congestionControl,
+    'keepAliveInterval': keepAliveInterval,
+    'gsoEnabled': gsoEnabled,
+  };
 
   factory DnsttConfig.fromJson(Map<String, dynamic> json) => DnsttConfig(
-        id: json['id'],
-        name: json['name'],
-        publicKey: json['publicKey'] ?? '',
-        tunnelDomain: json['tunnelDomain'],
-        transportType: _parseTransportType(json['transportType']),
-        tunnelType: _parseTunnelType(json['tunnelType']),
-        sshUsername: json['sshUsername'],
-        sshPassword: json['sshPassword'],
-        sshPrivateKey: json['sshPrivateKey'],
-        congestionControl: json['congestionControl'],
-        keepAliveInterval: json['keepAliveInterval'],
-        gsoEnabled: json['gsoEnabled'],
-      );
+    id: json['id'],
+    name: json['name'],
+    publicKey: json['publicKey'] ?? '',
+    tunnelDomain: json['tunnelDomain'],
+    transportType: _parseTransportType(json['transportType']),
+    tunnelType: _parseTunnelType(json['tunnelType']),
+    sshUsername: json['sshUsername'],
+    sshPassword: json['sshPassword'],
+    sshPrivateKey: json['sshPrivateKey'],
+    congestionControl: json['congestionControl'],
+    keepAliveInterval: json['keepAliveInterval'],
+    gsoEnabled: json['gsoEnabled'],
+  );
 
   static TransportType _parseTransportType(dynamic value) {
     if (value == null) return TransportType.dnstt;

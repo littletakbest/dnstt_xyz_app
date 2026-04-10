@@ -46,6 +46,7 @@ class AppState extends ChangeNotifier {
   int _proxyPort = StorageService.defaultProxyPort;
   String _connectionMode = 'vpn';
   bool _strictDnsMode = true;
+  bool _showTunnelIpOnHome = true;
   DnsServer? _autoDnsServer;
   String? _autoDnsError;
   final List<AppLogEntry> _logs = [];
@@ -72,6 +73,7 @@ class AppState extends ChangeNotifier {
   int get proxyPort => _proxyPort;
   String get connectionMode => _connectionMode;
   bool get strictDnsMode => _strictDnsMode;
+  bool get showTunnelIpOnHome => _showTunnelIpOnHome;
   DnsServer get strictDnsFallbackDns {
     final fallback = _dnsServers
         .where(
@@ -135,6 +137,7 @@ class AppState extends ChangeNotifier {
     _proxyPort = await _storage!.getProxyPort();
     _connectionMode = await _storage!.getConnectionMode() ?? 'vpn';
     _strictDnsMode = await _storage!.getStrictDnsMode();
+    _showTunnelIpOnHome = await _storage!.getShowTunnelIpOnHome();
     _strictDnsFallbackDnsId =
         await _storage!.getStrictDnsFallbackDnsId() ??
         DnsPresets.googleFallback().id;
@@ -690,6 +693,12 @@ class AppState extends ChangeNotifier {
   Future<void> setStrictDnsMode(bool value) async {
     _strictDnsMode = value;
     await _storage!.setStrictDnsMode(value);
+    notifyListeners();
+  }
+
+  Future<void> setShowTunnelIpOnHome(bool value) async {
+    _showTunnelIpOnHome = value;
+    await _storage!.setShowTunnelIpOnHome(value);
     notifyListeners();
   }
 
