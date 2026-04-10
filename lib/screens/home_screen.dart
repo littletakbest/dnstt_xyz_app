@@ -431,7 +431,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildInfoItem(
                     context,
                     Icons.dns,
-                    'Bootstrap DNS',
+                    'Tunneling DNS',
                     state.bootstrapDnsLabel,
                   ),
                   const SizedBox(height: 8),
@@ -445,7 +445,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       state.activeDns?.isSystemResolver == true) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Strict mode is on. The detected local resolver is used only to start the tunnel, and normal app DNS is tunneled through Google DNS to prevent leaks.',
+                      'Strict mode is on. ${state.strictDnsSummary}',
                       style: TextStyle(color: Colors.grey[600], fontSize: 12),
                       textAlign: TextAlign.center,
                     ),
@@ -705,6 +705,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final TextEditingController portController = TextEditingController(
       text: state.proxyPort.toString(),
     );
+    final strictDnsSubtitle =
+        'Prevents DNS leaks from normal apps. The local dns in this mode is tunnel only and app DNS falls back to ${state.strictDnsFallbackDns.displayName}.';
 
     showDialog(
       context: context,
@@ -740,11 +742,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Strict DNS'),
-                  subtitle: const Text(
-                    'Prevents DNS leaks from normal apps. The detected local resolver is bootstrap-only in this mode and app DNS falls back to 8.8.8.8.',
-                  ),
+                  subtitle: Text(strictDnsSubtitle),
                   value: state.strictDnsMode,
                   onChanged: (value) async {
+                    if (value &&
+                        state.activeDns?.isSystemResolver == true &&
+                        state.isAndroidVpnMode) {
+                      final shouldEnable =
+                          await _showEnableStrictDnsForLocalDnsDialog(
+                            context,
+                            state,
+                          );
+                      if (shouldEnable != true) {
+                        return;
+                      }
+                    }
                     await state.setStrictDnsMode(value);
                     if (stfContext.mounted) {
                       setDialogState(() {});
@@ -783,6 +795,31 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
             child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _showEnableStrictDnsForLocalDnsDialog(
+    BuildContext context,
+    AppState state,
+  ) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Enable Strict DNS?'),
+        content: Text(
+          'Local DNS is currently selected. If you turn Strict DNS on, the detected local resolver will only be used to start the tunnel and app DNS will switch to ${state.strictDnsFallbackDns.displayName} to help prevent leaks.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Enable'),
           ),
         ],
       ),

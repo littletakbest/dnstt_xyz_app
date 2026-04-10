@@ -82,7 +82,7 @@ class DnsServer {
         DnsResolverType.udp => 'UDP',
         DnsResolverType.doh => 'DoH',
         DnsResolverType.dot => 'DoT',
-        DnsResolverType.system => 'Detected local resolver',
+        DnsResolverType.system => 'local',
       },
     ];
     return parts.join(' - ');

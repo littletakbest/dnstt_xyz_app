@@ -13,6 +13,7 @@ class StorageService {
   static const String _connectionModeKey = 'connection_mode';
   static const String _useAutoDnsKey = 'use_auto_dns';
   static const String _strictDnsModeKey = 'strict_dns_mode';
+  static const String _strictDnsFallbackDnsKey = 'strict_dns_fallback_dns';
   static const int defaultProxyPort = 1080;
 
   final SharedPreferences _prefs;
@@ -152,6 +153,18 @@ class StorageService {
 
   Future<void> setStrictDnsMode(bool value) async {
     await _prefs.setBool(_strictDnsModeKey, value);
+  }
+
+  Future<String?> getStrictDnsFallbackDnsId() async {
+    return _prefs.getString(_strictDnsFallbackDnsKey);
+  }
+
+  Future<void> setStrictDnsFallbackDnsId(String? id) async {
+    if (id == null) {
+      await _prefs.remove(_strictDnsFallbackDnsKey);
+    } else {
+      await _prefs.setString(_strictDnsFallbackDnsKey, id);
+    }
   }
 
   // Auto DNS

@@ -32,6 +32,7 @@ class AppState extends ChangeNotifier {
   DnsttConfig? _activeConfig;
   DnsServer? _activeDns;
   String? _activeDnsId;
+  String _strictDnsFallbackDnsId = DnsPresets.googleFallback().id;
   ConnectionStatus _connectionStatus = ConnectionStatus.disconnected;
   String? _connectionError;
   Map<String, bool> _testingDns = {};
@@ -71,6 +72,20 @@ class AppState extends ChangeNotifier {
   int get proxyPort => _proxyPort;
   String get connectionMode => _connectionMode;
   bool get strictDnsMode => _strictDnsMode;
+  DnsServer get strictDnsFallbackDns {
+    final fallback = _dnsServers
+        .where(
+          (server) =>
+              server.id == _strictDnsFallbackDnsId && !server.isSystemResolver,
+        )
+        .firstOrNull;
+    if (fallback != null) return fallback;
+    return _dnsServers
+            .where((server) => server.id == DnsPresets.googleFallback().id)
+            .firstOrNull ??
+        DnsPresets.googleFallback();
+  }
+
   List<AppLogEntry> get logs => List.unmodifiable(_logs);
   bool get isAndroidVpnMode =>
       defaultTargetPlatform == TargetPlatform.android &&
@@ -81,7 +96,7 @@ class AppState extends ChangeNotifier {
     if (resolver == null) return null;
     if (!isStrictDnsActive) return resolver;
     if (resolver.isSystemResolver) {
-      return DnsPresets.googleFallback();
+      return strictDnsFallbackDns;
     }
     return resolver;
   }
@@ -120,6 +135,13 @@ class AppState extends ChangeNotifier {
     _proxyPort = await _storage!.getProxyPort();
     _connectionMode = await _storage!.getConnectionMode() ?? 'vpn';
     _strictDnsMode = await _storage!.getStrictDnsMode();
+    _strictDnsFallbackDnsId =
+        await _storage!.getStrictDnsFallbackDnsId() ??
+        DnsPresets.googleFallback().id;
+    if (_strictDnsFallbackDnsId == DnsServer.localDnsId) {
+      _strictDnsFallbackDnsId = DnsPresets.googleFallback().id;
+      await _storage!.setStrictDnsFallbackDnsId(_strictDnsFallbackDnsId);
+    }
 
     await _detectSystemDns();
 
@@ -246,6 +268,10 @@ class AppState extends ChangeNotifier {
     }
     await _storage!.removeDnsServer(id);
     _dnsServers = _mergePresetServers(await _storage!.getDnsServers());
+    if (_strictDnsFallbackDnsId == id) {
+      _strictDnsFallbackDnsId = DnsPresets.googleFallback().id;
+      await _storage!.setStrictDnsFallbackDnsId(_strictDnsFallbackDnsId);
+    }
     if (_activeDnsId == id) {
       _activeDns = null;
       _activeDnsId = null;
@@ -257,6 +283,8 @@ class AppState extends ChangeNotifier {
   Future<void> clearAllDnsServers() async {
     _dnsServers = DnsPresets.persistentPresets();
     await _storage!.saveDnsServers(_dnsServers);
+    _strictDnsFallbackDnsId = DnsPresets.googleFallback().id;
+    await _storage!.setStrictDnsFallbackDnsId(_strictDnsFallbackDnsId);
     _activeDns = null;
     _activeDnsId = null;
     await _storage!.setActiveDnsId(null);
@@ -515,7 +543,7 @@ class AppState extends ChangeNotifier {
     final resolver = activeDns;
     if (resolver == null) return 'No DNS selected';
     if (resolver.isSystemResolver) {
-      return '${resolver.displayAddress} (detected local resolver)';
+      return '${resolver.displayAddress} (local)';
     }
     return resolver.displayName;
   }
@@ -523,12 +551,14 @@ class AppState extends ChangeNotifier {
   String get appDnsLabel {
     final resolver = effectiveAppDns;
     if (resolver == null) return 'No DNS selected';
-    if (isStrictDnsActive &&
-        activeDns?.isSystemResolver == true &&
-        resolver.id == DnsPresets.googleFallback().id) {
+    if (isStrictDnsActive && activeDns?.isSystemResolver == true) {
       return '${resolver.displayName} (fallback)';
     }
     return resolver.displayName;
+  }
+
+  String get strictDnsSummary {
+    return 'The local dns is tunnel only and app DNS is tunneled through ${strictDnsFallbackDns.displayName}.';
   }
 
   /// Test a single DNS server
@@ -585,7 +615,7 @@ class AppState extends ChangeNotifier {
         id: DnsServer.localDnsId,
         address: addr,
         bootstrapAddress: addr,
-        name: 'Detected Local Resolver',
+        name: 'local dns resolver',
         provider: 'System network',
         group: 'local',
         isPreset: true,
@@ -660,6 +690,13 @@ class AppState extends ChangeNotifier {
   Future<void> setStrictDnsMode(bool value) async {
     _strictDnsMode = value;
     await _storage!.setStrictDnsMode(value);
+    notifyListeners();
+  }
+
+  Future<void> setStrictDnsFallbackDns(DnsServer dns) async {
+    if (dns.isSystemResolver) return;
+    _strictDnsFallbackDnsId = dns.id;
+    await _storage!.setStrictDnsFallbackDnsId(dns.id);
     notifyListeners();
   }
 }

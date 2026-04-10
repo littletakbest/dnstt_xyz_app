@@ -233,14 +233,14 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             const Divider(),
             _buildInfoTile('Config', state.activeConfig!.name),
             _buildInfoTile('Domain', state.activeConfig!.tunnelDomain),
-            _buildInfoTile('Bootstrap DNS', state.bootstrapDnsLabel),
+            _buildInfoTile('Tunneling DNS', state.bootstrapDnsLabel),
             _buildInfoTile('App DNS', state.appDnsLabel),
             if (state.isStrictDnsActive &&
                 state.activeDns?.isSystemResolver == true)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
-                  'Strict DNS mode is active. The detected local resolver is bootstrap-only and app DNS is tunneled through Google DNS.',
+                  'Strict DNS mode is active. ${state.strictDnsSummary}',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ),

@@ -1523,6 +1523,6 @@ class VpnService {
       resolver.isUdpResolver || resolver.isSystemResolver;
 
   String _unsupportedSlipstreamResolverMessage(DnsServer resolver) =>
-      'Slipstream currently supports UDP or the detected local resolver for bootstrap only. '
+      'Slipstream currently supports UDP or the local dns for tunnel only. '
       'Selected resolver type: ${resolver.resolverType.wireName}.';
 }

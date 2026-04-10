@@ -16,7 +16,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'strict DNS falls back only when using detected local resolver',
+    'strict DNS falls back only when using local dns resolver',
     () async {
       SharedPreferences.setMockInitialValues({});
       final storage = await StorageService.init();
@@ -27,7 +27,7 @@ void main() {
         id: 'local-resolver-test',
         address: '192.0.2.10',
         bootstrapAddress: '192.0.2.10',
-        name: 'Detected Local Resolver',
+        name: 'local dns',
         resolverType: DnsResolverType.system,
       );
 

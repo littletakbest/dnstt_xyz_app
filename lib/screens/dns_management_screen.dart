@@ -19,6 +19,8 @@ class DnsManagementScreen extends StatefulWidget {
   State<DnsManagementScreen> createState() => _DnsManagementScreenState();
 }
 
+enum _LocalDnsSelectionDecision { cancel, keepStrict, turnOffStrict }
+
 class _DnsManagementScreenState extends State<DnsManagementScreen> {
   final _searchController = TextEditingController();
   final VpnService _vpnService = VpnService();
@@ -34,6 +36,97 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleDnsSelection(AppState state, DnsServer server) async {
+    if (server.id == DnsServer.localDnsId && state.isStrictDnsActive) {
+      final decision = await _showLocalDnsStrictModeDialog(state);
+      if (decision == null || decision == _LocalDnsSelectionDecision.cancel) {
+        return;
+      }
+      if (decision == _LocalDnsSelectionDecision.turnOffStrict) {
+        final shouldDisableStrict = await _showDnsLeakWarningDialog();
+        if (shouldDisableStrict != true) {
+          return;
+        }
+        await state.setStrictDnsMode(false);
+      }
+    }
+    await state.setActiveDns(server);
+  }
+
+  Future<_LocalDnsSelectionDecision?> _showLocalDnsStrictModeDialog(
+    AppState state,
+  ) {
+    final fallbackName = state.strictDnsFallbackDns.displayName;
+    return showDialog<_LocalDnsSelectionDecision>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Use Local DNS While Strict DNS Is On?'),
+        content: Text(
+          'Choose how Local DNS should behave.\n\nKeep Strict uses the detected local resolver only to start the tunnel, then app DNS goes through $fallbackName.\n\nTurn Off Strict uses the detected local resolver directly, but can leak DNS outside the tunnel.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _LocalDnsSelectionDecision.cancel),
+            child: const Text('Cancel'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              _LocalDnsSelectionDecision.keepStrict,
+            ),
+            child: const Text('Keep Strict'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              _LocalDnsSelectionDecision.turnOffStrict,
+            ),
+            child: const Text('Turn Off Strict'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _showDnsLeakWarningDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Turn Off Strict DNS?'),
+        content: const Text(
+          'Turning Strict DNS off while Local DNS is selected can let apps send DNS queries outside the tunnel and may cause DNS leaks on your network.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Turn Off Strict'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setStrictDnsFallback(
+    BuildContext context,
+    AppState state,
+    DnsServer server,
+  ) async {
+    if (server.isSystemResolver) return;
+    await state.setStrictDnsFallbackDns(server);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Strict-mode fallback DNS set to ${server.displayName}'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -207,6 +300,31 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
               );
             },
           ),
+          Consumer<AppState>(
+            builder: (context, state, _) {
+              return Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.18)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.shield, color: Colors.blue[700], size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Strict fallback DNS: ${state.strictDnsFallbackDns.displayName}\nUsed for app DNS when Local DNS and Strict DNS are both on.',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
           Expanded(
             child: Consumer<AppState>(
               builder: (context, state, _) {
@@ -242,6 +360,9 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                   itemBuilder: (context, index) {
                     final server = servers[index];
                     final isTesting = state.isDnsBeingTested(server.id);
+                    final isFallback =
+                        !server.isSystemResolver &&
+                        state.strictDnsFallbackDns.id == server.id;
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
@@ -253,7 +374,7 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                         leading: Radio<String>(
                           value: server.id,
                           groupValue: state.activeDns?.id,
-                          onChanged: (_) => state.setActiveDns(server),
+                          onChanged: (_) => _handleDnsSelection(state, server),
                           activeColor: Colors.green,
                         ),
                         title: Row(
@@ -268,6 +389,8 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                             const SizedBox(width: 8),
                             if (server.isPreset) _buildPresetBadge(server),
                             if (server.isPreset) const SizedBox(width: 8),
+                            if (isFallback) _buildFallbackBadge(),
+                            if (isFallback) const SizedBox(width: 8),
                             // Status indicator inline with IP
                             if (server.lastTested != null)
                               _buildStatusBadge(server),
@@ -287,6 +410,29 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (!server.isSystemResolver)
+                              SizedBox(
+                                width: 40,
+                                height: 40,
+                                child: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  icon: Icon(
+                                    isFallback
+                                        ? Icons.shield
+                                        : Icons.shield_outlined,
+                                    size: 22,
+                                    color: isFallback ? Colors.blue : null,
+                                  ),
+                                  onPressed: () => _setStrictDnsFallback(
+                                    context,
+                                    state,
+                                    server,
+                                  ),
+                                  tooltip: isFallback
+                                      ? 'Strict-mode fallback DNS'
+                                      : 'Use as strict-mode fallback DNS',
+                                ),
+                              ),
                             // Test button
                             SizedBox(
                               width: 40,
@@ -343,7 +489,7 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
                               ),
                           ],
                         ),
-                        onTap: () => state.setActiveDns(server),
+                        onTap: () => _handleDnsSelection(state, server),
                       ),
                     );
                   },
@@ -438,6 +584,24 @@ class _DnsManagementScreenState extends State<DnsManagementScreen> {
         style: const TextStyle(
           fontSize: 10,
           color: Colors.blue,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFallbackBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.indigo.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Text(
+        'Fallback',
+        style: TextStyle(
+          fontSize: 10,
+          color: Colors.indigo,
           fontWeight: FontWeight.bold,
         ),
       ),

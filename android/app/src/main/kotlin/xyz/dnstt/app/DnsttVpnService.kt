@@ -157,7 +157,7 @@ class DnsttVpnService : VpnService() {
                 congestionControl = intent.getStringExtra(EXTRA_CONGESTION_CONTROL) ?: "dcubic"
                 keepAliveInterval = intent.getIntExtra(EXTRA_KEEP_ALIVE_INTERVAL, 400)
                 gso = intent.getBooleanExtra(EXTRA_GSO, false)
-                Log.d(TAG, "Bootstrap DNS: $resolverDisplayName ($resolverType), App DNS: $appResolverDisplayName ($appResolverType), Strict DNS: $strictDnsMode")
+                Log.d(TAG, "Tunneling DNS: $resolverDisplayName ($resolverType), App DNS: $appResolverDisplayName ($appResolverType), Strict DNS: $strictDnsMode")
                 // Run connect on background thread to avoid ANR
                 Thread { connect() }.start()
                 START_STICKY
