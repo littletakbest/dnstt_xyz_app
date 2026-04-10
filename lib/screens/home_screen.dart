@@ -440,6 +440,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     Icons.shield,
                     'App DNS',
                     state.appDnsLabel,
+                    valueColor: state.isStrictDnsActive
+                        ? Colors.blue[700]
+                        : Colors.red[700],
+                  ),
+                  const SizedBox(height: 8),
+                  _buildInfoItem(
+                    context,
+                    Icons.policy,
+                    'Strict Mode',
+                    state.isStrictDnsActive ? 'On' : 'Off',
+                    valueColor: state.isStrictDnsActive
+                        ? Colors.blue[700]
+                        : Colors.red[700],
                   ),
                   if (state.isStrictDnsActive &&
                       state.activeDns?.isSystemResolver == true) ...[
@@ -590,6 +603,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String label,
     String value, {
     bool isPlaceholder = false,
+    Color? valueColor,
   }) {
     return Row(
       children: [
@@ -605,7 +619,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(
               fontWeight: isPlaceholder ? FontWeight.normal : FontWeight.w500,
               fontSize: 14,
-              color: isPlaceholder ? Colors.grey[400] : null,
+              color: isPlaceholder ? Colors.grey[400] : valueColor,
             ),
             overflow: TextOverflow.ellipsis,
           ),
